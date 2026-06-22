@@ -55,16 +55,24 @@
                     <TextBlock Text="Active pairs" FontWeight="Bold" Margin="0,12,0,4" />
                     <ListBox ItemsSource="{Binding ActivePairs}"
                              SelectedItem="{Binding SelectedPair}"
-                             Height="150">
+                             Height="190">
                         <ListBox.ItemTemplate>
                             <DataTemplate>
-                                <StackPanel Orientation="Horizontal">
-                                    <Rectangle Width="12" Height="12" Margin="0,0,6,0"
-                                               Fill="{Binding ColorBrush}" VerticalAlignment="Center" />
-                                    <TextBlock Text="{Binding Label}" Width="80" VerticalAlignment="Center" />
-                                    <TextBlock Text="{Binding DelayText}" FontFamily="Consolas" VerticalAlignment="Center" />
-                                    <TextBlock Text="  rms " VerticalAlignment="Center" Foreground="#888" />
-                                    <TextBlock Text="{Binding RmsText}" FontFamily="Consolas" Foreground="#888" VerticalAlignment="Center" />
+                                <StackPanel Margin="0,3">
+                                    <StackPanel Orientation="Horizontal">
+                                        <Ellipse Width="10" Height="10" Margin="0,0,6,0"
+                                                 Fill="{Binding QualityBrush}" VerticalAlignment="Center" />
+                                        <Rectangle Width="12" Height="12" Margin="0,0,6,0"
+                                                   Fill="{Binding ColorBrush}" VerticalAlignment="Center" />
+                                        <TextBlock Text="{Binding Label}" Width="76" VerticalAlignment="Center" />
+                                        <TextBlock Text="{Binding DelayText}" FontFamily="Consolas" FontWeight="SemiBold" VerticalAlignment="Center" />
+                                    </StackPanel>
+                                    <StackPanel Orientation="Horizontal" Margin="28,1,0,0">
+                                        <TextBlock Text="{Binding CoherenceText}" FontFamily="Consolas" Foreground="#555" />
+                                        <TextBlock Text="{Binding LevelAText}" FontFamily="Consolas" Foreground="#888" Margin="10,0,0,0" />
+                                        <TextBlock Text="{Binding LevelBText}" FontFamily="Consolas" Foreground="#888" Margin="10,0,0,0" />
+                                    </StackPanel>
+                                    <TextBlock Text="{Binding SignalText}" Foreground="#C0392B" FontSize="11" Margin="28,0,0,0" />
                                 </StackPanel>
                             </DataTemplate>
                         </ListBox.ItemTemplate>

@@ -6,4 +6,7 @@ public readonly record struct PairResult(
     double TimeSeconds,
     double DelayMs,
     double Rms,
+    double LevelA,
+    double LevelB,
+    double Coherence,
     bool Valid);

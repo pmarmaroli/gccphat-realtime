@@ -40,6 +40,11 @@ public class GccPhatAnalyzerTests
                 Math.Abs(result.DelayMs - ExpectedDelayMs) < 1e-9,
                 $"Window {i}: expected {ExpectedDelayMs} ms, got {result.DelayMs} ms.");
             Assert.True(result.Rms > 0, $"Window {i}: RMS should be positive.");
+            Assert.True(result.LevelA > 0, $"Window {i}: channel A level should be positive.");
+            Assert.True(result.LevelB > 0, $"Window {i}: channel B level should be positive.");
+            Assert.InRange(result.Coherence, 0.0, 1.0);
+            Assert.True(result.Coherence > 0.5,
+                $"Window {i}: delayed copies should be strongly coherent, got {result.Coherence}.");
         }
     }
 

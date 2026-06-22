@@ -10,7 +10,19 @@ namespace GccPhat.Core;
 /// means channel 1 is delayed relative to channel 2.
 /// </param>
 /// <param name="Rms">RMS energy of channel 1 within the analysed band (Parseval, frequency domain).</param>
-public readonly record struct DelayEstimate(double DelayMs, double Rms);
+/// <param name="LevelA">Linear RMS level of the raw channel-1 frame (≈ full-scale 0..1).</param>
+/// <param name="LevelB">Linear RMS level of the raw channel-2 frame (≈ full-scale 0..1).</param>
+/// <param name="Coherence">
+/// Similarity between the two channels: the magnitude of the normalised cross-correlation
+/// coefficient of the two raw frames aligned at the estimated lag, in [0, 1].
+/// 1 ≈ the two signals are (delayed) copies of each other; ~0 ≈ unrelated / no common source.
+/// </param>
+public readonly record struct DelayEstimate(
+    double DelayMs,
+    double Rms,
+    double LevelA,
+    double LevelB,
+    double Coherence);
 
 /// <summary>
 /// Generalized Cross-Correlation with Phase Transform (GCC-PHAT) time-delay estimator,
@@ -151,7 +163,50 @@ public sealed class GccPhatAnalyzer
         }
 
         double delayMs = ((maxIndex - half) / (double)_fs) * 1000.0;
-        return new DelayEstimate(delayMs, rms1);
+
+        double levelA = RmsLevel(channel1);
+        double levelB = RmsLevel(channel2);
+        double coherence = NormalizedCrossCorrelation(channel1, channel2, maxIndex - half);
+
+        return new DelayEstimate(delayMs, rms1, levelA, levelB, coherence);
+    }
+
+    private static double RmsLevel(double[] frame)
+    {
+        double sum = 0.0;
+        for (int i = 0; i < frame.Length; i++)
+        {
+            sum += frame[i] * frame[i];
+        }
+        return Math.Sqrt(sum / frame.Length);
+    }
+
+    // |Pearson-style normalised cross-correlation| of the two frames aligned at the given
+    // integer lag (in samples), evaluated over the overlapping region only. Result in [0, 1].
+    private static double NormalizedCrossCorrelation(double[] a, double[] b, int lag)
+    {
+        int n = a.Length;
+        int lo = Math.Max(0, lag);
+        int hi = Math.Min(n, n + lag);
+
+        double cab = 0.0;
+        double caa = 0.0;
+        double cbb = 0.0;
+        for (int i = lo; i < hi; i++)
+        {
+            double av = a[i];
+            double bv = b[i - lag];
+            cab += av * bv;
+            caa += av * av;
+            cbb += bv * bv;
+        }
+
+        if (caa <= 1e-12 || cbb <= 1e-12)
+        {
+            return 0.0;
+        }
+        double rho = cab / Math.Sqrt(caa * cbb);
+        return Math.Min(1.0, Math.Abs(rho));
     }
 
     /// <summary>One-shot helper: builds a throwaway analyzer and estimates a single delay.</summary>

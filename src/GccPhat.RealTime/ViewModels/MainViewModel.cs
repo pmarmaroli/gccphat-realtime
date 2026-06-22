@@ -240,7 +240,7 @@ public sealed class MainViewModel : ObservableObject
         IsRunning = false;
         foreach (PairViewModel pair in ActivePairs)
         {
-            pair.Valid = false;
+            pair.ClearLive();
         }
         StatusText = "Stopped.";
     }
@@ -251,16 +251,7 @@ public sealed class MainViewModel : ObservableObject
         foreach (PairResult result in results)
         {
             PairViewModel? vm = ActivePairs.FirstOrDefault(p => p.Pair == result.Pair);
-            if (vm is null)
-            {
-                continue;
-            }
-            vm.Valid = result.Valid;
-            if (result.Valid)
-            {
-                vm.CurrentDelayMs = result.DelayMs;
-                vm.CurrentRms = result.Rms;
-            }
+            vm?.SetLive(result);
         }
     }
 

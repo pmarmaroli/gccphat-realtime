@@ -152,13 +152,15 @@ public sealed class RealTimeEngine : IDisposable
             bool haveB = capture.GetChannel(pair.ChannelB).CopyLatest(frameB);
             if (!haveA || !haveB)
             {
-                results.Add(new PairResult(pair, time, 0, 0, Valid: false));
+                results.Add(new PairResult(pair, time, 0, 0, 0, 0, 0, Valid: false));
                 continue;
             }
 
             GccPhatAnalyzer analyzer = GetAnalyzer(pair, bufferSize, fs, fmin, fmax);
             DelayEstimate estimate = analyzer.Process(frameA, frameB);
-            results.Add(new PairResult(pair, time, estimate.DelayMs, estimate.Rms, Valid: true));
+            results.Add(new PairResult(
+                pair, time, estimate.DelayMs, estimate.Rms,
+                estimate.LevelA, estimate.LevelB, estimate.Coherence, Valid: true));
         }
 
         return results;

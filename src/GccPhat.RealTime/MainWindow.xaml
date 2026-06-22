@@ -169,30 +169,44 @@
                         <StackPanel>
                             <TextBlock Style="{StaticResource SectionHeader}" Text="PLOT AXES" />
 
-                            <TextBlock Text="X axis (time)" Foreground="{StaticResource TextBrush}" Margin="0,0,0,4" />
-                            <CheckBox Content="Auto (full history)" IsChecked="{Binding XAutoScale}" Margin="0,0,0,4" />
-                            <Grid IsEnabled="{Binding CanEditXRange}">
+                            <Grid>
                                 <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="16" />
                                     <ColumnDefinition Width="*" />
                                 </Grid.ColumnDefinitions>
-                                <TextBlock Grid.Column="0" Text="window (s)" Foreground="{StaticResource TextDimBrush}" VerticalAlignment="Center" />
-                                <TextBox Grid.Column="1" Margin="8,0" Text="{Binding XWindowSeconds}" />
-                            </Grid>
 
-                            <TextBlock Text="Y axis (delay, ms)" Foreground="{StaticResource TextBrush}" Margin="0,12,0,4" />
-                            <CheckBox Content="Auto-scale" IsChecked="{Binding YAutoScale}" Margin="0,0,0,4" />
-                            <Grid IsEnabled="{Binding CanEditYRange}">
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="Auto" />
-                                    <ColumnDefinition Width="*" />
-                                    <ColumnDefinition Width="Auto" />
-                                    <ColumnDefinition Width="*" />
-                                </Grid.ColumnDefinitions>
-                                <TextBlock Grid.Column="0" Text="min" Foreground="{StaticResource TextDimBrush}" VerticalAlignment="Center" />
-                                <TextBox Grid.Column="1" Margin="6,0" Text="{Binding YMin}" />
-                                <TextBlock Grid.Column="2" Text="max" Foreground="{StaticResource TextDimBrush}" VerticalAlignment="Center" Margin="8,0,0,0" />
-                                <TextBox Grid.Column="3" Margin="6,0" Text="{Binding YMax}" />
+                                <!-- X axis -->
+                                <StackPanel Grid.Column="0">
+                                    <TextBlock Text="X axis (time)" Foreground="{StaticResource TextBrush}" Margin="0,0,0,4" />
+                                    <CheckBox Content="Auto (full)" IsChecked="{Binding XAutoScale}" Margin="0,0,0,6" />
+                                    <Grid IsEnabled="{Binding CanEditXRange}">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="Auto" />
+                                            <ColumnDefinition Width="*" />
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock Grid.Column="0" Text="window (s)" Foreground="{StaticResource TextDimBrush}" VerticalAlignment="Center" />
+                                        <TextBox Grid.Column="1" Margin="8,0,0,0" Text="{Binding XWindowSeconds}" />
+                                    </Grid>
+                                </StackPanel>
+
+                                <!-- Y axis -->
+                                <StackPanel Grid.Column="2">
+                                    <TextBlock Text="Y axis (delay, ms)" Foreground="{StaticResource TextBrush}" Margin="0,0,0,4" />
+                                    <CheckBox Content="Auto-scale" IsChecked="{Binding YAutoScale}" Margin="0,0,0,6" />
+                                    <Grid IsEnabled="{Binding CanEditYRange}">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="Auto" />
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                            <ColumnDefinition Width="*" />
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock Grid.Column="0" Text="min" Foreground="{StaticResource TextDimBrush}" VerticalAlignment="Center" />
+                                        <TextBox Grid.Column="1" Margin="5,0" Text="{Binding YMin}" />
+                                        <TextBlock Grid.Column="2" Text="max" Foreground="{StaticResource TextDimBrush}" VerticalAlignment="Center" />
+                                        <TextBox Grid.Column="3" Margin="5,0,0,0" Text="{Binding YMax}" />
+                                    </Grid>
+                                </StackPanel>
                             </Grid>
                         </StackPanel>
                     </Border>

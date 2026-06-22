@@ -1,0 +1,25 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+      - name: Publish self-contained single-file app
+        run: dotnet publish src/GccPhat.RealTime/GccPhat.RealTime.csproj -c Release -r win-x64 --self-contained true /p:PublishSingleFile=true -o publish
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: publish/GccPhat.RealTime.exe
+          generate_release_notes: true

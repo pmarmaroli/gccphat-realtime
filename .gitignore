@@ -1,0 +1,13 @@
+## Build output
+[Bb]in/
+[Oo]bj/
+publish/
+*.user
+
+## Visual Studio / Rider
+.vs/
+.idea/
+*.suo
+
+## Logs
+*.log

@@ -1,0 +1,9 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/GccPhat.Core/GccPhat.Core.csproj" />
+    <Project Path="src/GccPhat.RealTime/GccPhat.RealTime.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/GccPhat.Core.Tests/GccPhat.Core.Tests.csproj" />
+  </Folder>
+</Solution>

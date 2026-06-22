@@ -55,8 +55,14 @@ public partial class MainWindow : Window
 
         DelayPlot.Plot.Title("Inter-microphone delay (GCC-PHAT)");
         DelayPlot.Plot.Axes.Title.Label.ForeColor = accent;
+        DelayPlot.Plot.Axes.Title.Label.FontSize = 20;
         DelayPlot.Plot.XLabel("Time (s)");
         DelayPlot.Plot.YLabel("Delay (ms)");
+        DelayPlot.Plot.Axes.Left.Label.FontSize = 16;
+        DelayPlot.Plot.Axes.Bottom.Label.FontSize = 16;
+        DelayPlot.Plot.Axes.Left.TickLabelStyle.FontSize = 14;
+        DelayPlot.Plot.Axes.Bottom.TickLabelStyle.FontSize = 14;
+        DelayPlot.Plot.Legend.FontSize = 15;
         DelayPlot.Plot.ShowLegend();
 
         DelayPlot.Refresh();
@@ -94,6 +100,7 @@ public partial class MainWindow : Window
             DataLogger logger = DelayPlot.Plot.Add.DataLogger();
             (byte r, byte g, byte b) = Palette.Get(vm.PaletteIndex);
             logger.Color = new ScottPlot.Color(r, g, b);
+            logger.LineStyle.Width = 2.5f;
             logger.LegendText = vm.Label;
             logger.ManageAxisLimits = false; // we drive both axes from the X/Y settings
             _loggers[vm.Pair] = logger;

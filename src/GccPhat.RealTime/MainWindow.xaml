@@ -6,8 +6,8 @@
         xmlns:local="clr-namespace:GccPhat.RealTime"
         xmlns:sp="clr-namespace:ScottPlot.WPF;assembly=ScottPlot.WPF"
         mc:Ignorable="d"
-        Title="GCC-PHAT // Real-Time Microphone Array" Height="760" Width="1240"
-        Background="{StaticResource BgBrush}" FontFamily="Segoe UI" TextOptions.TextFormattingMode="Display">
+        Title="GCC-PHAT // Real-Time Microphone Array" Height="900" Width="1480"
+        Background="{StaticResource BgBrush}" FontFamily="Segoe UI" FontSize="14" TextOptions.TextFormattingMode="Display">
     <DockPanel>
 
         <!-- ===================== Status bar ===================== -->
@@ -20,14 +20,14 @@
         </Border>
 
         <!-- ===================== Left control panel ===================== -->
-        <Border DockPanel.Dock="Left" Width="390" Background="{StaticResource BgBrush}"
+        <Border DockPanel.Dock="Left" Width="450" Background="{StaticResource BgBrush}"
                 BorderBrush="{StaticResource PanelBorderBrush}" BorderThickness="0,0,1,0">
             <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="12,12,10,12">
                 <StackPanel>
 
-                    <TextBlock Margin="2,0,0,12">
-                        <Run Text="&#9670; GCC-PHAT" Foreground="{StaticResource AccentBrush}" FontFamily="Consolas" FontWeight="Bold" FontSize="16" />
-                        <Run Text="// REALTIME" Foreground="{StaticResource TextDimBrush}" FontFamily="Consolas" FontSize="16" />
+                    <TextBlock Margin="2,0,0,14">
+                        <Run Text="&#9670; GCC-PHAT" Foreground="{StaticResource AccentBrush}" FontFamily="Consolas" FontWeight="Bold" FontSize="22" />
+                        <Run Text="// REALTIME" Foreground="{StaticResource TextDimBrush}" FontFamily="Consolas" FontSize="22" />
                     </TextBlock>
 
                     <!-- Device -->
@@ -49,21 +49,21 @@
                         <StackPanel>
                             <TextBlock Style="{StaticResource SectionHeader}" Text="IDENTIFY &#183; BLOW ON A MIC" />
                             <TextBlock Text="{Binding DetectedChannelText}" TextWrapping="Wrap"
-                                       Foreground="{StaticResource AccentBrush}" FontFamily="Consolas" Margin="0,0,0,6" />
+                                       Foreground="{StaticResource AccentBrush}" FontFamily="Consolas" FontSize="15" Margin="0,0,0,8" />
                             <ItemsControl ItemsSource="{Binding ChannelMeters}">
                                 <ItemsControl.ItemTemplate>
                                     <DataTemplate>
-                                        <Grid Margin="0,2">
+                                        <Grid Margin="0,4">
                                             <Grid.ColumnDefinitions>
-                                                <ColumnDefinition Width="42" />
+                                                <ColumnDefinition Width="52" />
                                                 <ColumnDefinition Width="*" />
-                                                <ColumnDefinition Width="66" />
+                                                <ColumnDefinition Width="82" />
                                             </Grid.ColumnDefinitions>
-                                            <TextBlock Grid.Column="0" Text="{Binding Name}" FontFamily="Consolas"
+                                            <TextBlock Grid.Column="0" Text="{Binding Name}" FontFamily="Consolas" FontSize="15"
                                                        Foreground="{StaticResource TextBrush}" VerticalAlignment="Center" />
-                                            <ProgressBar Grid.Column="1" Height="14" Minimum="0" Maximum="100"
+                                            <ProgressBar Grid.Column="1" Height="20" Minimum="0" Maximum="100"
                                                          Value="{Binding BarValue, Mode=OneWay}" Foreground="{Binding BarBrush}" />
-                                            <TextBlock Grid.Column="2" Text="{Binding LevelText}" FontFamily="Consolas"
+                                            <TextBlock Grid.Column="2" Text="{Binding LevelText}" FontFamily="Consolas" FontSize="14"
                                                        Foreground="{StaticResource TextDimBrush}"
                                                        HorizontalAlignment="Right" VerticalAlignment="Center" />
                                         </Grid>
@@ -91,40 +91,40 @@
                                     <TextBlock Text="B" Foreground="{StaticResource TextDimBrush}" />
                                     <ComboBox ItemsSource="{Binding AvailableChannels}" SelectedItem="{Binding SelectedChannelB}" />
                                 </StackPanel>
-                                <Button Grid.Column="2" Content="Add" Width="62" VerticalAlignment="Bottom"
+                                <Button Grid.Column="2" Content="Add" Width="72" VerticalAlignment="Bottom"
                                         Command="{Binding AddPairCommand}" />
                             </Grid>
 
                             <ListBox ItemsSource="{Binding ActivePairs}" SelectedItem="{Binding SelectedPair}"
-                                     Height="220" Margin="0,10,0,0">
+                                     Height="250" Margin="0,10,0,0">
                                 <ListBox.ItemTemplate>
                                     <DataTemplate>
-                                        <StackPanel Margin="0,3">
+                                        <StackPanel Margin="0,4">
                                             <StackPanel Orientation="Horizontal">
-                                                <Ellipse Width="10" Height="10" Margin="0,0,6,0"
+                                                <Ellipse Width="13" Height="13" Margin="0,0,8,0"
                                                          Fill="{Binding QualityBrush}" VerticalAlignment="Center" />
-                                                <Rectangle Width="12" Height="12" Margin="0,0,6,0"
+                                                <Rectangle Width="14" Height="14" Margin="0,0,8,0"
                                                            Fill="{Binding ColorBrush}" VerticalAlignment="Center" />
-                                                <TextBlock Text="{Binding Label}" Width="74" VerticalAlignment="Center"
-                                                           Foreground="{StaticResource TextBrush}" />
-                                                <TextBlock Text="{Binding DelayText}" FontFamily="Consolas" FontWeight="SemiBold"
+                                                <TextBlock Text="{Binding Label}" Width="86" VerticalAlignment="Center"
+                                                           FontSize="15" Foreground="{StaticResource TextBrush}" />
+                                                <TextBlock Text="{Binding DelayText}" FontFamily="Consolas" FontSize="17" FontWeight="SemiBold"
                                                            Foreground="{StaticResource AccentBrush}" VerticalAlignment="Center" />
                                             </StackPanel>
-                                            <StackPanel Orientation="Horizontal" Margin="28,1,0,0">
-                                                <TextBlock Text="{Binding VerdictText}" FontWeight="Bold" Foreground="{Binding VerdictBrush}" />
-                                                <TextBlock Text="{Binding CorrText}" FontFamily="Consolas" Foreground="{StaticResource TextDimBrush}" Margin="10,0,0,0" />
-                                                <TextBlock Text="{Binding DiffText}" FontFamily="Consolas" Foreground="{StaticResource TextDimBrush}" Margin="10,0,0,0" />
+                                            <StackPanel Orientation="Horizontal" Margin="34,2,0,0">
+                                                <TextBlock Text="{Binding VerdictText}" FontSize="14" FontWeight="Bold" Foreground="{Binding VerdictBrush}" />
+                                                <TextBlock Text="{Binding CorrText}" FontFamily="Consolas" FontSize="14" Foreground="{StaticResource TextDimBrush}" Margin="12,0,0,0" />
+                                                <TextBlock Text="{Binding DiffText}" FontFamily="Consolas" FontSize="14" Foreground="{StaticResource TextDimBrush}" Margin="12,0,0,0" />
                                             </StackPanel>
-                                            <StackPanel Orientation="Horizontal" Margin="28,1,0,0">
-                                                <TextBlock Text="{Binding LevelAText}" FontFamily="Consolas" Foreground="{StaticResource TextDimBrush}" />
-                                                <TextBlock Text="{Binding LevelBText}" FontFamily="Consolas" Foreground="{StaticResource TextDimBrush}" Margin="10,0,0,0" />
+                                            <StackPanel Orientation="Horizontal" Margin="34,2,0,0">
+                                                <TextBlock Text="{Binding LevelAText}" FontFamily="Consolas" FontSize="14" Foreground="{StaticResource TextDimBrush}" />
+                                                <TextBlock Text="{Binding LevelBText}" FontFamily="Consolas" FontSize="14" Foreground="{StaticResource TextDimBrush}" Margin="12,0,0,0" />
                                             </StackPanel>
-                                            <TextBlock Text="{Binding SignalText}" Foreground="{StaticResource DangerBrush}" FontSize="11" Margin="28,0,0,0" />
+                                            <TextBlock Text="{Binding SignalText}" Foreground="{StaticResource DangerBrush}" FontSize="13" Margin="34,0,0,0" />
                                         </StackPanel>
                                     </DataTemplate>
                                 </ListBox.ItemTemplate>
                             </ListBox>
-                            <Button Content="Remove selected pair" Margin="0,6,0,0" HorizontalAlignment="Left" Width="168"
+                            <Button Content="Remove selected pair" Margin="0,8,0,0" HorizontalAlignment="Left" Width="200"
                                     Command="{Binding RemoveSelectedPairCommand}" />
                         </StackPanel>
                     </Border>
@@ -195,9 +195,9 @@
                             <ColumnDefinition Width="*" />
                             <ColumnDefinition Width="*" />
                         </Grid.ColumnDefinitions>
-                        <Button Grid.Column="0" Content="START" Height="38" Margin="0,0,5,0"
+                        <Button Grid.Column="0" Content="START" Height="48" FontSize="16" Margin="0,0,5,0"
                                 Style="{StaticResource AccentButton}" Command="{Binding StartCommand}" />
-                        <Button Grid.Column="1" Content="STOP" Height="38" Margin="5,0,0,0"
+                        <Button Grid.Column="1" Content="STOP" Height="48" FontSize="16" Margin="5,0,0,0"
                                 Command="{Binding StopCommand}" />
                     </Grid>
 

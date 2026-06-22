@@ -150,9 +150,11 @@
                                 <TextBox Grid.Row="1" Grid.Column="1" Margin="8,4" Text="{Binding Fmin}" />
                                 <TextBlock Grid.Row="2" Grid.Column="0" Text="fmax (Hz)" Foreground="{StaticResource TextDimBrush}" VerticalAlignment="Center" Margin="0,4" />
                                 <TextBox Grid.Row="2" Grid.Column="1" Margin="8,4" Text="{Binding Fmax}" />
-                                <TextBlock Grid.Row="3" Grid.Column="0" Text="Update (ms)" Foreground="{StaticResource TextDimBrush}" VerticalAlignment="Center" Margin="0,4" />
+                                <TextBlock Grid.Row="3" Grid.Column="0" Text="Refresh (ms)" Foreground="{StaticResource TextDimBrush}" VerticalAlignment="Center" Margin="0,4" />
                                 <TextBox Grid.Row="3" Grid.Column="1" Margin="8,4" Text="{Binding UpdateIntervalMs}" />
                             </Grid>
+                            <TextBlock Margin="0,8,0,0" TextWrapping="Wrap" FontSize="12" Foreground="{StaticResource TextDimBrush}"
+                                       Text="Sliding window: each estimate is computed on the latest Window samples (this sets the max measurable delay &amp; the frequency resolution). Refresh sets how often the plot updates &#8212; with Refresh below Window/fs the analysis windows overlap." />
                         </StackPanel>
                     </Border>
 

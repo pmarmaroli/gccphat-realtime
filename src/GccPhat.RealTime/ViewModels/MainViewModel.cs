@@ -17,6 +17,9 @@ public sealed class MainViewModel : ObservableObject
     private int _fmin = 200;
     private int _fmax = 8000;
     private int _updateIntervalMs = 50;
+    private bool _yAutoScale = true;
+    private double _yMin = -5;
+    private double _yMax = 5;
     private bool _isRunning;
     private string _statusText = "Select a capture device, then Start. Blow on a mic to identify its channel.";
     private string _detectedChannelText = "Start, then blow on a microphone to identify its channel.";
@@ -96,6 +99,26 @@ public sealed class MainViewModel : ObservableObject
     {
         get => _updateIntervalMs;
         set => SetProperty(ref _updateIntervalMs, value);
+    }
+
+    public bool YAutoScale
+    {
+        get => _yAutoScale;
+        set { if (SetProperty(ref _yAutoScale, value)) OnPropertyChanged(nameof(CanEditYRange)); }
+    }
+
+    public bool CanEditYRange => !_yAutoScale;
+
+    public double YMin
+    {
+        get => _yMin;
+        set => SetProperty(ref _yMin, value);
+    }
+
+    public double YMax
+    {
+        get => _yMax;
+        set => SetProperty(ref _yMax, value);
     }
 
     public PairViewModel? SelectedPair

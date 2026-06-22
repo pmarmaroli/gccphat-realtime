@@ -135,6 +135,21 @@
                         <TextBox Grid.Row="3" Grid.Column="1" Margin="6,4" Text="{Binding UpdateIntervalMs}" />
                     </Grid>
 
+                    <TextBlock Text="Delay plot Y axis (ms)" FontWeight="Bold" Margin="0,12,0,4" />
+                    <CheckBox Content="Auto-scale" IsChecked="{Binding YAutoScale}" Margin="0,0,0,4" />
+                    <Grid IsEnabled="{Binding CanEditYRange}">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Grid.Column="0" Text="min" VerticalAlignment="Center" />
+                        <TextBox Grid.Column="1" Margin="6,0" Text="{Binding YMin}" />
+                        <TextBlock Grid.Column="2" Text="max" VerticalAlignment="Center" Margin="8,0,0,0" />
+                        <TextBox Grid.Column="3" Margin="6,0" Text="{Binding YMax}" />
+                    </Grid>
+
                     <Separator Margin="0,12" />
 
                     <Grid>

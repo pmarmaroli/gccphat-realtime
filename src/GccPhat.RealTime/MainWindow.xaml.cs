@@ -1,5 +1,7 @@
-﻿using System.Collections.Generic;
+﻿using System;
+using System.Collections.Generic;
 using System.Collections.Specialized;
+using System.ComponentModel;
 using System.Windows;
 using GccPhat.RealTime.Analysis;
 using GccPhat.RealTime.ViewModels;
@@ -12,6 +14,7 @@ public partial class MainWindow : Window
 {
     private readonly MainViewModel _viewModel = new();
     private readonly Dictionary<ChannelPair, DataLogger> _loggers = new();
+    private double _lastTimeSeconds;
 
     public MainWindow()
     {
@@ -26,6 +29,7 @@ public partial class MainWindow : Window
         _viewModel.ActivePairs.CollectionChanged += OnActivePairsChanged;
         _viewModel.Engine.ResultsReady += OnResultsReady;
         _viewModel.Engine.ChannelLevelsReady += OnChannelLevels;
+        _viewModel.PropertyChanged += OnViewModelPropertyChanged;
 
         BuildLoggers();
     }
@@ -34,6 +38,16 @@ public partial class MainWindow : Window
         => Dispatcher.BeginInvoke(() => _viewModel.UpdateChannelLevels(levels));
 
     private void OnActivePairsChanged(object? sender, NotifyCollectionChangedEventArgs e) => BuildLoggers();
+
+    private void OnViewModelPropertyChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName is nameof(MainViewModel.YAutoScale)
+            or nameof(MainViewModel.YMin)
+            or nameof(MainViewModel.YMax))
+        {
+            ApplyYAxis();
+        }
+    }
 
     private void BuildLoggers()
     {
@@ -46,7 +60,25 @@ public partial class MainWindow : Window
             (byte r, byte g, byte b) = Palette.Get(vm.PaletteIndex);
             logger.Color = new ScottPlot.Color(r, g, b);
             logger.LegendText = vm.Label;
+            logger.ManageAxisLimits = _viewModel.YAutoScale;
             _loggers[vm.Pair] = logger;
+        }
+
+        ApplyYAxis();
+    }
+
+    /// <summary>Applies the current Y-axis mode (auto-scale, or fixed user min/max).</summary>
+    private void ApplyYAxis()
+    {
+        foreach (DataLogger logger in _loggers.Values)
+        {
+            logger.ManageAxisLimits = _viewModel.YAutoScale;
+        }
+
+        if (!_viewModel.YAutoScale)
+        {
+            DelayPlot.Plot.Axes.SetLimitsX(0, Math.Max(5, _lastTimeSeconds));
+            DelayPlot.Plot.Axes.SetLimitsY(_viewModel.YMin, _viewModel.YMax);
         }
 
         DelayPlot.Refresh();
@@ -64,7 +96,19 @@ public partial class MainWindow : Window
                 }
             }
 
+            if (results.Count > 0)
+            {
+                _lastTimeSeconds = results[0].TimeSeconds;
+            }
+
             _viewModel.UpdateReadouts(results);
+
+            if (!_viewModel.YAutoScale)
+            {
+                DelayPlot.Plot.Axes.SetLimitsX(0, Math.Max(5, _lastTimeSeconds));
+                DelayPlot.Plot.Axes.SetLimitsY(_viewModel.YMin, _viewModel.YMax);
+            }
+
             DelayPlot.Refresh();
         });
     }
@@ -73,6 +117,7 @@ public partial class MainWindow : Window
     {
         _viewModel.Engine.ResultsReady -= OnResultsReady;
         _viewModel.Engine.ChannelLevelsReady -= OnChannelLevels;
+        _viewModel.PropertyChanged -= OnViewModelPropertyChanged;
         _viewModel.Engine.Stop();
         base.OnClosed(e);
     }

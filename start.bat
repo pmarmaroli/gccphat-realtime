@@ -8,6 +8,9 @@ cd /d "%~dp0"
 set "PROJ=src\GccPhat.RealTime\GccPhat.RealTime.csproj"
 set "EXE=src\GccPhat.RealTime\bin\Release\net8.0-windows\GccPhat.RealTime.exe"
 
+REM --- Close any running instance so the build can overwrite its files ------
+taskkill /F /IM GccPhat.RealTime.exe >nul 2>&1
+
 REM --- Check the .NET SDK is available --------------------------------------
 where dotnet >nul 2>&1
 if errorlevel 1 (

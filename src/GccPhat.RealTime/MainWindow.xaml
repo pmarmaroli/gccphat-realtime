@@ -6,160 +6,198 @@
         xmlns:local="clr-namespace:GccPhat.RealTime"
         xmlns:sp="clr-namespace:ScottPlot.WPF;assembly=ScottPlot.WPF"
         mc:Ignorable="d"
-        Title="GCC-PHAT Real-Time — Microphone Array Delay Viewer" Height="680" Width="1180">
+        Title="GCC-PHAT // Real-Time Microphone Array" Height="760" Width="1240"
+        Background="{StaticResource BgBrush}" FontFamily="Segoe UI" TextOptions.TextFormattingMode="Display">
     <DockPanel>
-        <StatusBar DockPanel.Dock="Bottom">
-            <StatusBarItem>
-                <TextBlock Text="{Binding StatusText}" />
-            </StatusBarItem>
-        </StatusBar>
 
-        <Border DockPanel.Dock="Left" Width="360" BorderBrush="#DDD" BorderThickness="0,0,1,0">
-            <ScrollViewer VerticalScrollBarVisibility="Auto">
-                <StackPanel Margin="12">
+        <!-- ===================== Status bar ===================== -->
+        <Border DockPanel.Dock="Bottom" Background="{StaticResource PanelBrush}"
+                BorderBrush="{StaticResource PanelBorderBrush}" BorderThickness="0,1,0,0" Padding="12,6">
+            <StackPanel Orientation="Horizontal">
+                <Ellipse Width="8" Height="8" Margin="0,0,8,0" VerticalAlignment="Center" Fill="{StaticResource AccentBrush}" />
+                <TextBlock Text="{Binding StatusText}" Foreground="{StaticResource TextDimBrush}" FontFamily="Consolas" />
+            </StackPanel>
+        </Border>
 
-                    <TextBlock Text="Capture device" FontWeight="Bold" Margin="0,0,0,4" />
-                    <DockPanel>
-                        <Button DockPanel.Dock="Right" Content="Refresh" Width="70" Margin="6,0,0,0"
-                                Command="{Binding RefreshDevicesCommand}" IsEnabled="{Binding CanEditConfig}" />
-                        <ComboBox ItemsSource="{Binding Devices}"
-                                  SelectedItem="{Binding SelectedDevice}"
-                                  IsEnabled="{Binding CanEditConfig}" />
-                    </DockPanel>
+        <!-- ===================== Left control panel ===================== -->
+        <Border DockPanel.Dock="Left" Width="390" Background="{StaticResource BgBrush}"
+                BorderBrush="{StaticResource PanelBorderBrush}" BorderThickness="0,0,1,0">
+            <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="12,12,10,12">
+                <StackPanel>
 
-                    <TextBlock Text="Identify channels (blow on a mic)" FontWeight="Bold" Margin="0,12,0,2" />
-                    <TextBlock Text="{Binding DetectedChannelText}" TextWrapping="Wrap"
-                               Foreground="#2C3E50" Margin="0,0,0,4" />
-                    <ItemsControl ItemsSource="{Binding ChannelMeters}">
-                        <ItemsControl.ItemTemplate>
-                            <DataTemplate>
-                                <Grid Margin="0,1">
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="40" />
-                                        <ColumnDefinition Width="*" />
-                                        <ColumnDefinition Width="64" />
-                                    </Grid.ColumnDefinitions>
-                                    <TextBlock Grid.Column="0" Text="{Binding Name}" VerticalAlignment="Center" />
-                                    <ProgressBar Grid.Column="1" Height="14" Minimum="0" Maximum="100"
-                                                 Value="{Binding BarValue, Mode=OneWay}" Foreground="{Binding BarBrush}" />
-                                    <TextBlock Grid.Column="2" Text="{Binding LevelText}" FontFamily="Consolas"
-                                               HorizontalAlignment="Right" VerticalAlignment="Center" />
-                                </Grid>
-                            </DataTemplate>
-                        </ItemsControl.ItemTemplate>
-                    </ItemsControl>
+                    <TextBlock Margin="2,0,0,12">
+                        <Run Text="&#9670; GCC-PHAT" Foreground="{StaticResource AccentBrush}" FontFamily="Consolas" FontWeight="Bold" FontSize="16" />
+                        <Run Text="// REALTIME" Foreground="{StaticResource TextDimBrush}" FontFamily="Consolas" FontSize="16" />
+                    </TextBlock>
 
-                    <Separator Margin="0,12" />
-
-                    <TextBlock Text="Channel pair" FontWeight="Bold" Margin="0,0,0,4" />
-                    <Grid>
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="*" />
-                            <ColumnDefinition Width="*" />
-                            <ColumnDefinition Width="Auto" />
-                        </Grid.ColumnDefinitions>
-                        <StackPanel Grid.Column="0" Margin="0,0,4,0">
-                            <TextBlock Text="A" />
-                            <ComboBox ItemsSource="{Binding AvailableChannels}"
-                                      SelectedItem="{Binding SelectedChannelA}" />
+                    <!-- Device -->
+                    <Border Style="{StaticResource Card}">
+                        <StackPanel>
+                            <TextBlock Style="{StaticResource SectionHeader}" Text="CAPTURE DEVICE" />
+                            <DockPanel>
+                                <Button DockPanel.Dock="Right" Content="Refresh" Width="74" Margin="8,0,0,0"
+                                        Command="{Binding RefreshDevicesCommand}" IsEnabled="{Binding CanEditConfig}" />
+                                <ComboBox ItemsSource="{Binding Devices}"
+                                          SelectedItem="{Binding SelectedDevice}"
+                                          IsEnabled="{Binding CanEditConfig}" />
+                            </DockPanel>
                         </StackPanel>
-                        <StackPanel Grid.Column="1" Margin="0,0,4,0">
-                            <TextBlock Text="B" />
-                            <ComboBox ItemsSource="{Binding AvailableChannels}"
-                                      SelectedItem="{Binding SelectedChannelB}" />
-                        </StackPanel>
-                        <Button Grid.Column="2" Content="Add" Width="60" VerticalAlignment="Bottom"
-                                Command="{Binding AddPairCommand}" />
-                    </Grid>
+                    </Border>
 
-                    <TextBlock Text="Active pairs" FontWeight="Bold" Margin="0,12,0,4" />
-                    <ListBox ItemsSource="{Binding ActivePairs}"
-                             SelectedItem="{Binding SelectedPair}"
-                             Height="230">
-                        <ListBox.ItemTemplate>
-                            <DataTemplate>
-                                <StackPanel Margin="0,3">
-                                    <StackPanel Orientation="Horizontal">
-                                        <Ellipse Width="10" Height="10" Margin="0,0,6,0"
-                                                 Fill="{Binding QualityBrush}" VerticalAlignment="Center" />
-                                        <Rectangle Width="12" Height="12" Margin="0,0,6,0"
-                                                   Fill="{Binding ColorBrush}" VerticalAlignment="Center" />
-                                        <TextBlock Text="{Binding Label}" Width="76" VerticalAlignment="Center" />
-                                        <TextBlock Text="{Binding DelayText}" FontFamily="Consolas" FontWeight="SemiBold" VerticalAlignment="Center" />
-                                    </StackPanel>
-                                    <StackPanel Orientation="Horizontal" Margin="28,1,0,0">
-                                        <TextBlock Text="{Binding VerdictText}" FontWeight="Bold"
-                                                   Foreground="{Binding VerdictBrush}" />
-                                        <TextBlock Text="{Binding CorrText}" FontFamily="Consolas" Foreground="#555" Margin="10,0,0,0" />
-                                        <TextBlock Text="{Binding DiffText}" FontFamily="Consolas" Foreground="#555" Margin="10,0,0,0" />
-                                    </StackPanel>
-                                    <StackPanel Orientation="Horizontal" Margin="28,1,0,0">
-                                        <TextBlock Text="{Binding LevelAText}" FontFamily="Consolas" Foreground="#888" />
-                                        <TextBlock Text="{Binding LevelBText}" FontFamily="Consolas" Foreground="#888" Margin="10,0,0,0" />
-                                    </StackPanel>
-                                    <TextBlock Text="{Binding SignalText}" Foreground="#C0392B" FontSize="11" Margin="28,0,0,0" />
+                    <!-- Identify -->
+                    <Border Style="{StaticResource Card}">
+                        <StackPanel>
+                            <TextBlock Style="{StaticResource SectionHeader}" Text="IDENTIFY &#183; BLOW ON A MIC" />
+                            <TextBlock Text="{Binding DetectedChannelText}" TextWrapping="Wrap"
+                                       Foreground="{StaticResource AccentBrush}" FontFamily="Consolas" Margin="0,0,0,6" />
+                            <ItemsControl ItemsSource="{Binding ChannelMeters}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <Grid Margin="0,2">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="42" />
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="66" />
+                                            </Grid.ColumnDefinitions>
+                                            <TextBlock Grid.Column="0" Text="{Binding Name}" FontFamily="Consolas"
+                                                       Foreground="{StaticResource TextBrush}" VerticalAlignment="Center" />
+                                            <ProgressBar Grid.Column="1" Height="14" Minimum="0" Maximum="100"
+                                                         Value="{Binding BarValue, Mode=OneWay}" Foreground="{Binding BarBrush}" />
+                                            <TextBlock Grid.Column="2" Text="{Binding LevelText}" FontFamily="Consolas"
+                                                       Foreground="{StaticResource TextDimBrush}"
+                                                       HorizontalAlignment="Right" VerticalAlignment="Center" />
+                                        </Grid>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </StackPanel>
+                    </Border>
+
+                    <!-- Channel pairs -->
+                    <Border Style="{StaticResource Card}">
+                        <StackPanel>
+                            <TextBlock Style="{StaticResource SectionHeader}" Text="CHANNEL PAIRS" />
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <StackPanel Grid.Column="0" Margin="0,0,6,0">
+                                    <TextBlock Text="A" Foreground="{StaticResource TextDimBrush}" />
+                                    <ComboBox ItemsSource="{Binding AvailableChannels}" SelectedItem="{Binding SelectedChannelA}" />
                                 </StackPanel>
-                            </DataTemplate>
-                        </ListBox.ItemTemplate>
-                    </ListBox>
-                    <Button Content="Remove selected pair" Margin="0,4,0,0" HorizontalAlignment="Left" Width="160"
-                            Command="{Binding RemoveSelectedPairCommand}" />
+                                <StackPanel Grid.Column="1" Margin="0,0,6,0">
+                                    <TextBlock Text="B" Foreground="{StaticResource TextDimBrush}" />
+                                    <ComboBox ItemsSource="{Binding AvailableChannels}" SelectedItem="{Binding SelectedChannelB}" />
+                                </StackPanel>
+                                <Button Grid.Column="2" Content="Add" Width="62" VerticalAlignment="Bottom"
+                                        Command="{Binding AddPairCommand}" />
+                            </Grid>
 
-                    <Separator Margin="0,12" />
+                            <ListBox ItemsSource="{Binding ActivePairs}" SelectedItem="{Binding SelectedPair}"
+                                     Height="220" Margin="0,10,0,0">
+                                <ListBox.ItemTemplate>
+                                    <DataTemplate>
+                                        <StackPanel Margin="0,3">
+                                            <StackPanel Orientation="Horizontal">
+                                                <Ellipse Width="10" Height="10" Margin="0,0,6,0"
+                                                         Fill="{Binding QualityBrush}" VerticalAlignment="Center" />
+                                                <Rectangle Width="12" Height="12" Margin="0,0,6,0"
+                                                           Fill="{Binding ColorBrush}" VerticalAlignment="Center" />
+                                                <TextBlock Text="{Binding Label}" Width="74" VerticalAlignment="Center"
+                                                           Foreground="{StaticResource TextBrush}" />
+                                                <TextBlock Text="{Binding DelayText}" FontFamily="Consolas" FontWeight="SemiBold"
+                                                           Foreground="{StaticResource AccentBrush}" VerticalAlignment="Center" />
+                                            </StackPanel>
+                                            <StackPanel Orientation="Horizontal" Margin="28,1,0,0">
+                                                <TextBlock Text="{Binding VerdictText}" FontWeight="Bold" Foreground="{Binding VerdictBrush}" />
+                                                <TextBlock Text="{Binding CorrText}" FontFamily="Consolas" Foreground="{StaticResource TextDimBrush}" Margin="10,0,0,0" />
+                                                <TextBlock Text="{Binding DiffText}" FontFamily="Consolas" Foreground="{StaticResource TextDimBrush}" Margin="10,0,0,0" />
+                                            </StackPanel>
+                                            <StackPanel Orientation="Horizontal" Margin="28,1,0,0">
+                                                <TextBlock Text="{Binding LevelAText}" FontFamily="Consolas" Foreground="{StaticResource TextDimBrush}" />
+                                                <TextBlock Text="{Binding LevelBText}" FontFamily="Consolas" Foreground="{StaticResource TextDimBrush}" Margin="10,0,0,0" />
+                                            </StackPanel>
+                                            <TextBlock Text="{Binding SignalText}" Foreground="{StaticResource DangerBrush}" FontSize="11" Margin="28,0,0,0" />
+                                        </StackPanel>
+                                    </DataTemplate>
+                                </ListBox.ItemTemplate>
+                            </ListBox>
+                            <Button Content="Remove selected pair" Margin="0,6,0,0" HorizontalAlignment="Left" Width="168"
+                                    Command="{Binding RemoveSelectedPairCommand}" />
+                        </StackPanel>
+                    </Border>
 
-                    <TextBlock Text="Parameters" FontWeight="Bold" Margin="0,0,0,4" />
-                    <Grid IsEnabled="{Binding CanEditConfig}">
+                    <!-- Analysis parameters -->
+                    <Border Style="{StaticResource Card}">
+                        <StackPanel>
+                            <TextBlock Style="{StaticResource SectionHeader}" Text="ANALYSIS" />
+                            <Grid IsEnabled="{Binding CanEditConfig}">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                </Grid.RowDefinitions>
+                                <TextBlock Grid.Row="0" Grid.Column="0" Text="Window (samples)" Foreground="{StaticResource TextDimBrush}" VerticalAlignment="Center" Margin="0,4" />
+                                <ComboBox Grid.Row="0" Grid.Column="1" Margin="8,4" ItemsSource="{Binding BufferSizeOptions}" SelectedItem="{Binding SelectedBufferSize}" />
+                                <TextBlock Grid.Row="1" Grid.Column="0" Text="fmin (Hz)" Foreground="{StaticResource TextDimBrush}" VerticalAlignment="Center" Margin="0,4" />
+                                <TextBox Grid.Row="1" Grid.Column="1" Margin="8,4" Text="{Binding Fmin}" />
+                                <TextBlock Grid.Row="2" Grid.Column="0" Text="fmax (Hz)" Foreground="{StaticResource TextDimBrush}" VerticalAlignment="Center" Margin="0,4" />
+                                <TextBox Grid.Row="2" Grid.Column="1" Margin="8,4" Text="{Binding Fmax}" />
+                                <TextBlock Grid.Row="3" Grid.Column="0" Text="Update (ms)" Foreground="{StaticResource TextDimBrush}" VerticalAlignment="Center" Margin="0,4" />
+                                <TextBox Grid.Row="3" Grid.Column="1" Margin="8,4" Text="{Binding UpdateIntervalMs}" />
+                            </Grid>
+                        </StackPanel>
+                    </Border>
+
+                    <!-- Plot axes -->
+                    <Border Style="{StaticResource Card}">
+                        <StackPanel>
+                            <TextBlock Style="{StaticResource SectionHeader}" Text="PLOT AXES" />
+
+                            <TextBlock Text="X axis (time)" Foreground="{StaticResource TextBrush}" Margin="0,0,0,4" />
+                            <CheckBox Content="Auto (full history)" IsChecked="{Binding XAutoScale}" Margin="0,0,0,4" />
+                            <Grid IsEnabled="{Binding CanEditXRange}">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Grid.Column="0" Text="window (s)" Foreground="{StaticResource TextDimBrush}" VerticalAlignment="Center" />
+                                <TextBox Grid.Column="1" Margin="8,0" Text="{Binding XWindowSeconds}" />
+                            </Grid>
+
+                            <TextBlock Text="Y axis (delay, ms)" Foreground="{StaticResource TextBrush}" Margin="0,12,0,4" />
+                            <CheckBox Content="Auto-scale" IsChecked="{Binding YAutoScale}" Margin="0,0,0,4" />
+                            <Grid IsEnabled="{Binding CanEditYRange}">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Grid.Column="0" Text="min" Foreground="{StaticResource TextDimBrush}" VerticalAlignment="Center" />
+                                <TextBox Grid.Column="1" Margin="6,0" Text="{Binding YMin}" />
+                                <TextBlock Grid.Column="2" Text="max" Foreground="{StaticResource TextDimBrush}" VerticalAlignment="Center" Margin="8,0,0,0" />
+                                <TextBox Grid.Column="3" Margin="6,0" Text="{Binding YMax}" />
+                            </Grid>
+                        </StackPanel>
+                    </Border>
+
+                    <!-- Transport -->
+                    <Grid Margin="0,2,0,4">
                         <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="*" />
                             <ColumnDefinition Width="*" />
                         </Grid.ColumnDefinitions>
-                        <Grid.RowDefinitions>
-                            <RowDefinition Height="Auto" />
-                            <RowDefinition Height="Auto" />
-                            <RowDefinition Height="Auto" />
-                            <RowDefinition Height="Auto" />
-                        </Grid.RowDefinitions>
-
-                        <TextBlock Grid.Row="0" Grid.Column="0" Text="Window (samples)" VerticalAlignment="Center" Margin="0,4" />
-                        <ComboBox Grid.Row="0" Grid.Column="1" Margin="6,4"
-                                  ItemsSource="{Binding BufferSizeOptions}"
-                                  SelectedItem="{Binding SelectedBufferSize}" />
-
-                        <TextBlock Grid.Row="1" Grid.Column="0" Text="fmin (Hz)" VerticalAlignment="Center" Margin="0,4" />
-                        <TextBox Grid.Row="1" Grid.Column="1" Margin="6,4" Text="{Binding Fmin}" />
-
-                        <TextBlock Grid.Row="2" Grid.Column="0" Text="fmax (Hz)" VerticalAlignment="Center" Margin="0,4" />
-                        <TextBox Grid.Row="2" Grid.Column="1" Margin="6,4" Text="{Binding Fmax}" />
-
-                        <TextBlock Grid.Row="3" Grid.Column="0" Text="Update (ms)" VerticalAlignment="Center" Margin="0,4" />
-                        <TextBox Grid.Row="3" Grid.Column="1" Margin="6,4" Text="{Binding UpdateIntervalMs}" />
-                    </Grid>
-
-                    <TextBlock Text="Delay plot Y axis (ms)" FontWeight="Bold" Margin="0,12,0,4" />
-                    <CheckBox Content="Auto-scale" IsChecked="{Binding YAutoScale}" Margin="0,0,0,4" />
-                    <Grid IsEnabled="{Binding CanEditYRange}">
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="Auto" />
-                            <ColumnDefinition Width="*" />
-                            <ColumnDefinition Width="Auto" />
-                            <ColumnDefinition Width="*" />
-                        </Grid.ColumnDefinitions>
-                        <TextBlock Grid.Column="0" Text="min" VerticalAlignment="Center" />
-                        <TextBox Grid.Column="1" Margin="6,0" Text="{Binding YMin}" />
-                        <TextBlock Grid.Column="2" Text="max" VerticalAlignment="Center" Margin="8,0,0,0" />
-                        <TextBox Grid.Column="3" Margin="6,0" Text="{Binding YMax}" />
-                    </Grid>
-
-                    <Separator Margin="0,12" />
-
-                    <Grid>
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="*" />
-                            <ColumnDefinition Width="*" />
-                        </Grid.ColumnDefinitions>
-                        <Button Grid.Column="0" Content="Start" Height="34" Margin="0,0,4,0"
-                                Command="{Binding StartCommand}" />
-                        <Button Grid.Column="1" Content="Stop" Height="34" Margin="4,0,0,0"
+                        <Button Grid.Column="0" Content="START" Height="38" Margin="0,0,5,0"
+                                Style="{StaticResource AccentButton}" Command="{Binding StartCommand}" />
+                        <Button Grid.Column="1" Content="STOP" Height="38" Margin="5,0,0,0"
                                 Command="{Binding StopCommand}" />
                     </Grid>
 
@@ -167,6 +205,10 @@
             </ScrollViewer>
         </Border>
 
-        <sp:WpfPlot x:Name="DelayPlot" />
+        <!-- ===================== Plot ===================== -->
+        <Border Margin="12" Background="{StaticResource PanelBrush}"
+                BorderBrush="{StaticResource PanelBorderBrush}" BorderThickness="1" CornerRadius="6" Padding="6">
+            <sp:WpfPlot x:Name="DelayPlot" />
+        </Border>
     </DockPanel>
 </Window>

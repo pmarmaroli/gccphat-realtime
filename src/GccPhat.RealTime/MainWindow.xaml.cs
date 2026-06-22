@@ -15,16 +15,15 @@ public partial class MainWindow : Window
     private readonly MainViewModel _viewModel = new();
     private readonly Dictionary<ChannelPair, DataLogger> _loggers = new();
     private double _lastTimeSeconds;
+    private double _dataYMin = double.PositiveInfinity;
+    private double _dataYMax = double.NegativeInfinity;
 
     public MainWindow()
     {
         InitializeComponent();
         DataContext = _viewModel;
 
-        DelayPlot.Plot.Title("Inter-microphone delay (GCC-PHAT)");
-        DelayPlot.Plot.XLabel("Time (s)");
-        DelayPlot.Plot.YLabel("Delay (ms)");
-        DelayPlot.Plot.ShowLegend();
+        StyleDarkPlot();
 
         _viewModel.ActivePairs.CollectionChanged += OnActivePairsChanged;
         _viewModel.Engine.ResultsReady += OnResultsReady;
@@ -37,15 +36,48 @@ public partial class MainWindow : Window
     private void OnChannelLevels(double[] levels)
         => Dispatcher.BeginInvoke(() => _viewModel.UpdateChannelLevels(levels));
 
+    private void StyleDarkPlot()
+    {
+        ScottPlot.Color figure = ScottPlot.Color.FromHex("#0B0F14");
+        ScottPlot.Color panel = ScottPlot.Color.FromHex("#121A24");
+        ScottPlot.Color grid = ScottPlot.Color.FromHex("#1E2A38");
+        ScottPlot.Color text = ScottPlot.Color.FromHex("#9FB3C8");
+        ScottPlot.Color accent = ScottPlot.Color.FromHex("#19D3FF");
+
+        DelayPlot.Plot.FigureBackground.Color = figure;
+        DelayPlot.Plot.DataBackground.Color = panel;
+        DelayPlot.Plot.Axes.Color(text);
+        DelayPlot.Plot.Grid.MajorLineColor = grid;
+
+        DelayPlot.Plot.Legend.BackgroundColor = panel;
+        DelayPlot.Plot.Legend.FontColor = text;
+        DelayPlot.Plot.Legend.OutlineColor = grid;
+
+        DelayPlot.Plot.Title("Inter-microphone delay (GCC-PHAT)");
+        DelayPlot.Plot.Axes.Title.Label.ForeColor = accent;
+        DelayPlot.Plot.XLabel("Time (s)");
+        DelayPlot.Plot.YLabel("Delay (ms)");
+        DelayPlot.Plot.ShowLegend();
+
+        DelayPlot.Refresh();
+    }
+
     private void OnActivePairsChanged(object? sender, NotifyCollectionChangedEventArgs e) => BuildLoggers();
 
     private void OnViewModelPropertyChanged(object? sender, PropertyChangedEventArgs e)
     {
-        if (e.PropertyName is nameof(MainViewModel.YAutoScale)
-            or nameof(MainViewModel.YMin)
-            or nameof(MainViewModel.YMax))
+        switch (e.PropertyName)
         {
-            ApplyYAxis();
+            case nameof(MainViewModel.IsRunning) when _viewModel.IsRunning:
+                BuildLoggers(); // start fresh: clear history (the engine clock restarts at 0)
+                break;
+            case nameof(MainViewModel.XAutoScale):
+            case nameof(MainViewModel.XWindowSeconds):
+            case nameof(MainViewModel.YAutoScale):
+            case nameof(MainViewModel.YMin):
+            case nameof(MainViewModel.YMax):
+                ApplyAxes();
+                break;
         }
     }
 
@@ -53,6 +85,9 @@ public partial class MainWindow : Window
     {
         _loggers.Clear();
         DelayPlot.Plot.Clear();
+        _lastTimeSeconds = 0;
+        _dataYMin = double.PositiveInfinity;
+        _dataYMax = double.NegativeInfinity;
 
         foreach (PairViewModel vm in _viewModel.ActivePairs)
         {
@@ -60,26 +95,52 @@ public partial class MainWindow : Window
             (byte r, byte g, byte b) = Palette.Get(vm.PaletteIndex);
             logger.Color = new ScottPlot.Color(r, g, b);
             logger.LegendText = vm.Label;
-            logger.ManageAxisLimits = _viewModel.YAutoScale;
+            logger.ManageAxisLimits = false; // we drive both axes from the X/Y settings
             _loggers[vm.Pair] = logger;
         }
 
-        ApplyYAxis();
+        ApplyAxes();
     }
 
-    /// <summary>Applies the current Y-axis mode (auto-scale, or fixed user min/max).</summary>
-    private void ApplyYAxis()
+    /// <summary>Applies the current X (time window) and Y (delay range) axis settings.</summary>
+    private void ApplyAxes()
     {
-        foreach (DataLogger logger in _loggers.Values)
+        double tMax = _lastTimeSeconds;
+        double xMin, xMax;
+        if (_viewModel.XAutoScale)
         {
-            logger.ManageAxisLimits = _viewModel.YAutoScale;
+            xMin = 0;
+            xMax = Math.Max(5, tMax);
         }
+        else
+        {
+            double window = Math.Max(1, _viewModel.XWindowSeconds);
+            xMax = Math.Max(window, tMax);
+            xMin = Math.Max(0, xMax - window);
+        }
+        DelayPlot.Plot.Axes.SetLimitsX(xMin, xMax);
 
-        if (!_viewModel.YAutoScale)
+        double yMin, yMax;
+        if (_viewModel.YAutoScale)
         {
-            DelayPlot.Plot.Axes.SetLimitsX(0, Math.Max(5, _lastTimeSeconds));
-            DelayPlot.Plot.Axes.SetLimitsY(_viewModel.YMin, _viewModel.YMax);
+            if (_dataYMax >= _dataYMin)
+            {
+                double pad = Math.Max(0.5, (_dataYMax - _dataYMin) * 0.1);
+                yMin = _dataYMin - pad;
+                yMax = _dataYMax + pad;
+            }
+            else
+            {
+                yMin = -1;
+                yMax = 1;
+            }
         }
+        else
+        {
+            yMin = _viewModel.YMin;
+            yMax = _viewModel.YMax;
+        }
+        DelayPlot.Plot.Axes.SetLimitsY(yMin, yMax);
 
         DelayPlot.Refresh();
     }
@@ -93,6 +154,8 @@ public partial class MainWindow : Window
                 if (result.Valid && _loggers.TryGetValue(result.Pair, out DataLogger? logger))
                 {
                     logger.Add(result.TimeSeconds, result.DelayMs);
+                    if (result.DelayMs < _dataYMin) _dataYMin = result.DelayMs;
+                    if (result.DelayMs > _dataYMax) _dataYMax = result.DelayMs;
                 }
             }
 
@@ -102,14 +165,7 @@ public partial class MainWindow : Window
             }
 
             _viewModel.UpdateReadouts(results);
-
-            if (!_viewModel.YAutoScale)
-            {
-                DelayPlot.Plot.Axes.SetLimitsX(0, Math.Max(5, _lastTimeSeconds));
-                DelayPlot.Plot.Axes.SetLimitsY(_viewModel.YMin, _viewModel.YMax);
-            }
-
-            DelayPlot.Refresh();
+            ApplyAxes();
         });
     }
 

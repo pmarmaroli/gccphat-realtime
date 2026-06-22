@@ -27,6 +27,28 @@
                                   IsEnabled="{Binding CanEditConfig}" />
                     </DockPanel>
 
+                    <TextBlock Text="Identify channels (blow on a mic)" FontWeight="Bold" Margin="0,12,0,2" />
+                    <TextBlock Text="{Binding DetectedChannelText}" TextWrapping="Wrap"
+                               Foreground="#2C3E50" Margin="0,0,0,4" />
+                    <ItemsControl ItemsSource="{Binding ChannelMeters}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <Grid Margin="0,1">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="40" />
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="64" />
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Grid.Column="0" Text="{Binding Name}" VerticalAlignment="Center" />
+                                    <ProgressBar Grid.Column="1" Height="14" Minimum="0" Maximum="100"
+                                                 Value="{Binding BarValue, Mode=OneWay}" Foreground="{Binding BarBrush}" />
+                                    <TextBlock Grid.Column="2" Text="{Binding LevelText}" FontFamily="Consolas"
+                                               HorizontalAlignment="Right" VerticalAlignment="Center" />
+                                </Grid>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+
                     <Separator Margin="0,12" />
 
                     <TextBlock Text="Channel pair" FontWeight="Bold" Margin="0,0,0,4" />
@@ -39,14 +61,12 @@
                         <StackPanel Grid.Column="0" Margin="0,0,4,0">
                             <TextBlock Text="A" />
                             <ComboBox ItemsSource="{Binding AvailableChannels}"
-                                      SelectedItem="{Binding SelectedChannelA}"
-                                      IsEnabled="{Binding CanEditConfig}" />
+                                      SelectedItem="{Binding SelectedChannelA}" />
                         </StackPanel>
                         <StackPanel Grid.Column="1" Margin="0,0,4,0">
                             <TextBlock Text="B" />
                             <ComboBox ItemsSource="{Binding AvailableChannels}"
-                                      SelectedItem="{Binding SelectedChannelB}"
-                                      IsEnabled="{Binding CanEditConfig}" />
+                                      SelectedItem="{Binding SelectedChannelB}" />
                         </StackPanel>
                         <Button Grid.Column="2" Content="Add" Width="60" VerticalAlignment="Bottom"
                                 Command="{Binding AddPairCommand}" />

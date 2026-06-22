@@ -18,7 +18,8 @@ public sealed class MainViewModel : ObservableObject
     private int _fmax = 8000;
     private int _updateIntervalMs = 50;
     private bool _isRunning;
-    private string _statusText = "Select a capture device, add channel pairs, then Start.";
+    private string _statusText = "Select a capture device, then Start. Blow on a mic to identify its channel.";
+    private string _detectedChannelText = "Start, then blow on a microphone to identify its channel.";
     private PairViewModel? _selectedPair;
 
     public MainViewModel()
@@ -27,8 +28,8 @@ public sealed class MainViewModel : ObservableObject
 
         RefreshDevicesCommand = new RelayCommand(RefreshDevices);
         AddPairCommand = new RelayCommand(AddPair, CanAddPair);
-        RemoveSelectedPairCommand = new RelayCommand(RemoveSelectedPair, () => _selectedPair is not null && !IsRunning);
-        StartCommand = new RelayCommand(Start, () => !IsRunning && SelectedDevice is not null && ActivePairs.Count > 0);
+        RemoveSelectedPairCommand = new RelayCommand(RemoveSelectedPair, () => _selectedPair is not null);
+        StartCommand = new RelayCommand(Start, () => !IsRunning && SelectedDevice is not null);
         StopCommand = new RelayCommand(Stop, () => IsRunning);
 
         RefreshDevices();
@@ -38,6 +39,7 @@ public sealed class MainViewModel : ObservableObject
 
     public ObservableCollection<AudioDeviceInfo> Devices { get; } = new();
     public ObservableCollection<int> AvailableChannels { get; } = new();
+    public ObservableCollection<ChannelMeterViewModel> ChannelMeters { get; } = new();
     public ObservableCollection<PairViewModel> ActivePairs { get; } = new();
     public int[] BufferSizeOptions { get; } = { 1024, 2048, 4096, 8192, 16384, 32768 };
 
@@ -123,6 +125,12 @@ public sealed class MainViewModel : ObservableObject
         private set => SetProperty(ref _statusText, value);
     }
 
+    public string DetectedChannelText
+    {
+        get => _detectedChannelText;
+        private set => SetProperty(ref _detectedChannelText, value);
+    }
+
     private void RefreshDevices()
     {
         try
@@ -145,18 +153,19 @@ public sealed class MainViewModel : ObservableObject
     private void RebuildChannelList()
     {
         AvailableChannels.Clear();
+        ChannelMeters.Clear();
         int count = SelectedDevice?.ChannelCount ?? 0;
         for (int c = 0; c < count; c++)
         {
             AvailableChannels.Add(c);
+            ChannelMeters.Add(new ChannelMeterViewModel(c));
         }
         SelectedChannelA = count > 0 ? 0 : null;
         SelectedChannelB = count > 1 ? 1 : (count > 0 ? 0 : null);
     }
 
     private bool CanAddPair()
-        => !IsRunning
-           && SelectedChannelA is int a
+        => SelectedChannelA is int a
            && SelectedChannelB is int b
            && a != b;
 
@@ -203,7 +212,7 @@ public sealed class MainViewModel : ObservableObject
 
     private void Start()
     {
-        if (SelectedDevice is null || ActivePairs.Count == 0)
+        if (SelectedDevice is null)
         {
             return;
         }
@@ -242,6 +251,12 @@ public sealed class MainViewModel : ObservableObject
         {
             pair.ClearLive();
         }
+        foreach (ChannelMeterViewModel meter in ChannelMeters)
+        {
+            meter.SetLevel(0.0);
+            meter.IsActive = false;
+        }
+        DetectedChannelText = "Start, then blow on a microphone to identify its channel.";
         StatusText = "Stopped.";
     }
 
@@ -253,6 +268,47 @@ public sealed class MainViewModel : ObservableObject
             PairViewModel? vm = ActivePairs.FirstOrDefault(p => p.Pair == result.Pair);
             vm?.SetLive(result);
         }
+    }
+
+    /// <summary>Called on the UI thread with per-channel levels to drive the identify meters.</summary>
+    public void UpdateChannelLevels(double[] levels)
+    {
+        const double ActivationDb = -35.0;
+        const double MarginDb = 6.0;
+
+        int n = Math.Min(levels.Length, ChannelMeters.Count);
+        int bestIndex = -1;
+        double bestDb = double.NegativeInfinity;
+        double secondDb = double.NegativeInfinity;
+
+        for (int c = 0; c < n; c++)
+        {
+            ChannelMeters[c].SetLevel(levels[c]);
+            double db = levels[c] <= 1e-7 ? double.NegativeInfinity : 20.0 * Math.Log10(levels[c]);
+            if (db > bestDb)
+            {
+                secondDb = bestDb;
+                bestDb = db;
+                bestIndex = c;
+            }
+            else if (db > secondDb)
+            {
+                secondDb = db;
+            }
+        }
+
+        bool detected = bestIndex >= 0
+                        && bestDb > ActivationDb
+                        && (double.IsNegativeInfinity(secondDb) || bestDb - secondDb > MarginDb);
+
+        for (int c = 0; c < ChannelMeters.Count; c++)
+        {
+            ChannelMeters[c].IsActive = detected && c == bestIndex;
+        }
+
+        DetectedChannelText = detected
+            ? $"\u27a1 Channel {bestIndex} is loudest \u2014 that microphone is channel {bestIndex}."
+            : "Blow on a microphone to identify its channel\u2026";
     }
 
     private void RaiseCommandStates()

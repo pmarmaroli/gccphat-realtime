@@ -36,6 +36,10 @@ public sealed class RealTimeEngine : IDisposable
     private int _configVersion;
 
     public event Action<IReadOnlyList<PairResult>>? ResultsReady;
+    public event Action<double[]>? ChannelLevelsReady;
+
+    private const int LevelWindow = 2048;
+    private readonly double[] _levelScratch = new double[LevelWindow];
 
     public bool IsRunning { get; private set; }
 
@@ -99,6 +103,8 @@ public sealed class RealTimeEngine : IDisposable
 
         try
         {
+            PublishChannelLevels();
+
             List<PairResult>? results = AnalyzeOnce();
             if (results is { Count: > 0 })
             {
@@ -165,6 +171,37 @@ public sealed class RealTimeEngine : IDisposable
         }
 
         return results;
+    }
+
+    private void PublishChannelLevels()
+    {
+        MultichannelCapture? capture;
+        lock (_gate)
+        {
+            capture = _capture;
+        }
+        if (capture is null)
+        {
+            return;
+        }
+
+        int channelCount = capture.ChannelCount;
+        var levels = new double[channelCount];
+        for (int c = 0; c < channelCount; c++)
+        {
+            if (capture.GetChannel(c).CopyLatest(_levelScratch))
+            {
+                double sum = 0.0;
+                for (int i = 0; i < _levelScratch.Length; i++)
+                {
+                    double v = _levelScratch[i];
+                    sum += v * v;
+                }
+                levels[c] = Math.Sqrt(sum / _levelScratch.Length);
+            }
+        }
+
+        ChannelLevelsReady?.Invoke(levels);
     }
 
     private GccPhatAnalyzer GetAnalyzer(ChannelPair pair, int bufferSize, int fs, int fmin, int fmax)

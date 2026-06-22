@@ -25,9 +25,13 @@ public partial class MainWindow : Window
 
         _viewModel.ActivePairs.CollectionChanged += OnActivePairsChanged;
         _viewModel.Engine.ResultsReady += OnResultsReady;
+        _viewModel.Engine.ChannelLevelsReady += OnChannelLevels;
 
         BuildLoggers();
     }
+
+    private void OnChannelLevels(double[] levels)
+        => Dispatcher.BeginInvoke(() => _viewModel.UpdateChannelLevels(levels));
 
     private void OnActivePairsChanged(object? sender, NotifyCollectionChangedEventArgs e) => BuildLoggers();
 
@@ -68,6 +72,7 @@ public partial class MainWindow : Window
     protected override void OnClosed(System.EventArgs e)
     {
         _viewModel.Engine.ResultsReady -= OnResultsReady;
+        _viewModel.Engine.ChannelLevelsReady -= OnChannelLevels;
         _viewModel.Engine.Stop();
         base.OnClosed(e);
     }

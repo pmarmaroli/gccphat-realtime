@@ -48,7 +48,7 @@
                     <Border Style="{StaticResource Card}">
                         <StackPanel>
                             <ToggleButton x:Name="IdentifyToggle" Style="{StaticResource ExpanderHeader}"
-                                          Content="IDENTIFY &#183; BLOW ON A MIC" IsChecked="True" Margin="0,0,0,8" />
+                                          Content="IDENTIFY &#183; BLOW ON A MIC" IsChecked="False" Margin="0,0,0,8" />
                             <StackPanel Visibility="{Binding IsChecked, ElementName=IdentifyToggle, Converter={StaticResource BoolToVis}}">
                             <TextBlock Text="{Binding DetectedChannelText}" TextWrapping="Wrap"
                                        Foreground="{StaticResource AccentBrush}" FontFamily="Consolas" FontSize="15" Margin="0,0,0,8" />
@@ -135,7 +135,9 @@
                     <!-- Analysis parameters -->
                     <Border Style="{StaticResource Card}">
                         <StackPanel>
-                            <TextBlock Style="{StaticResource SectionHeader}" Text="ANALYSIS" />
+                            <ToggleButton x:Name="AnalysisToggle" Style="{StaticResource ExpanderHeader}"
+                                          Content="ANALYSIS" IsChecked="False" Margin="0,0,0,8" />
+                            <StackPanel Visibility="{Binding IsChecked, ElementName=AnalysisToggle, Converter={StaticResource BoolToVis}}">
                             <Grid IsEnabled="{Binding CanEditConfig}">
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition Width="Auto" />
@@ -158,6 +160,7 @@
                             </Grid>
                             <TextBlock Margin="0,8,0,0" TextWrapping="Wrap" FontSize="12" Foreground="{StaticResource TextDimBrush}"
                                        Text="Sliding window: each estimate is computed on the latest Window samples (this sets the max measurable delay &amp; the frequency resolution). Refresh sets how often the plot updates &#8212; with Refresh below Window/fs the analysis windows overlap." />
+                            </StackPanel>
                         </StackPanel>
                     </Border>
 

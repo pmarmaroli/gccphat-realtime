@@ -219,7 +219,7 @@ public sealed class MainViewModel : ObservableObject
 
         try
         {
-            var capture = new MultichannelCapture(SelectedDevice.Device);
+            var capture = new MultichannelCapture(SelectedDevice);
 
             int nyquist = capture.SampleRate / 2;
             int fmax = Math.Min(Fmax, nyquist);
@@ -239,7 +239,10 @@ public sealed class MainViewModel : ObservableObject
         catch (Exception ex)
         {
             IsRunning = false;
-            StatusText = $"Failed to start capture: {ex.Message}";
+            string hint = SelectedDevice.UseExclusive
+                ? " This device needs exclusive mode for all channels; close any app using it and retry."
+                : string.Empty;
+            StatusText = $"Failed to start capture: {ex.Message}.{hint}";
         }
     }
 

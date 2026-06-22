@@ -25,6 +25,8 @@
     <SolidColorBrush x:Key="WarnBrush" Color="#FFFFC857" />
     <SolidColorBrush x:Key="DangerBrush" Color="#FFFF5C7A" />
 
+    <BooleanToVisibilityConverter x:Key="BoolToVis" />
+
     <!-- ============================ Base text ============================ -->
     <Style TargetType="TextBlock">
         <Setter Property="Foreground" Value="{StaticResource TextBrush}" />
@@ -38,6 +40,39 @@
         <Setter Property="FontWeight" Value="Bold" />
         <Setter Property="FontSize" Value="16" />
         <Setter Property="Margin" Value="0,0,0,8" />
+    </Style>
+
+    <!-- Collapsible section header (a toggle with a rotating chevron) -->
+    <Style x:Key="ExpanderHeader" TargetType="ToggleButton">
+        <Setter Property="Cursor" Value="Hand" />
+        <Setter Property="Background" Value="Transparent" />
+        <Setter Property="HorizontalAlignment" Value="Left" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="ToggleButton">
+                    <StackPanel Orientation="Horizontal" Background="Transparent">
+                        <Path x:Name="chev" Width="10" Height="10" Stretch="Uniform"
+                              Fill="{StaticResource AccentBrush}" Data="M 0 0 L 6 5 L 0 10 Z"
+                              VerticalAlignment="Center" RenderTransformOrigin="0.5,0.5" />
+                        <TextBlock Text="{TemplateBinding Content}" Margin="9,0,0,0"
+                                   Foreground="{StaticResource AccentBrush}" FontFamily="Consolas"
+                                   FontWeight="Bold" FontSize="16" />
+                    </StackPanel>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsChecked" Value="True">
+                            <Setter TargetName="chev" Property="RenderTransform">
+                                <Setter.Value>
+                                    <RotateTransform Angle="90" />
+                                </Setter.Value>
+                            </Setter>
+                        </Trigger>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="chev" Property="Opacity" Value="0.8" />
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
     </Style>
 
     <!-- ============================ Card panel ============================ -->

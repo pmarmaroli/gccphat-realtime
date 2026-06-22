@@ -47,7 +47,9 @@
                     <!-- Identify -->
                     <Border Style="{StaticResource Card}">
                         <StackPanel>
-                            <TextBlock Style="{StaticResource SectionHeader}" Text="IDENTIFY &#183; BLOW ON A MIC" />
+                            <ToggleButton x:Name="IdentifyToggle" Style="{StaticResource ExpanderHeader}"
+                                          Content="IDENTIFY &#183; BLOW ON A MIC" IsChecked="True" Margin="0,0,0,8" />
+                            <StackPanel Visibility="{Binding IsChecked, ElementName=IdentifyToggle, Converter={StaticResource BoolToVis}}">
                             <TextBlock Text="{Binding DetectedChannelText}" TextWrapping="Wrap"
                                        Foreground="{StaticResource AccentBrush}" FontFamily="Consolas" FontSize="15" Margin="0,0,0,8" />
                             <ItemsControl ItemsSource="{Binding ChannelMeters}">
@@ -70,6 +72,7 @@
                                     </DataTemplate>
                                 </ItemsControl.ItemTemplate>
                             </ItemsControl>
+                            </StackPanel>
                         </StackPanel>
                     </Border>
 
@@ -96,7 +99,7 @@
                             </Grid>
 
                             <ListBox ItemsSource="{Binding ActivePairs}" SelectedItem="{Binding SelectedPair}"
-                                     Height="250" Margin="0,10,0,0">
+                                     Height="130" Margin="0,10,0,0">
                                 <ListBox.ItemTemplate>
                                     <DataTemplate>
                                         <StackPanel Margin="0,4">

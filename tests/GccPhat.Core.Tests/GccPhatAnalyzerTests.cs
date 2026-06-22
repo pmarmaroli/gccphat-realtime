@@ -45,6 +45,12 @@ public class GccPhatAnalyzerTests
             Assert.InRange(result.Coherence, 0.0, 1.0);
             Assert.True(result.Coherence > 0.5,
                 $"Window {i}: delayed copies should be strongly coherent, got {result.Coherence}.");
+            // stereo_noise channels are delayed (non-zero lag) copies => genuinely DISTINCT
+            // at lag 0: low zero-lag correlation and a large inter-channel difference.
+            Assert.True(result.ZeroLagCorrelation < 0.5,
+                $"Window {i}: delayed channels should have low zero-lag correlation, got {result.ZeroLagCorrelation}.");
+            Assert.True(result.DifferenceRatio > 0.5,
+                $"Window {i}: delayed channels should differ at lag 0, got {result.DifferenceRatio}.");
         }
     }
 
@@ -62,6 +68,22 @@ public class GccPhatAnalyzerTests
 
         Assert.Equal(instance.DelayMs, oneShot.DelayMs, 12);
         Assert.Equal(instance.Rms, oneShot.Rms, 12);
+    }
+
+    [Fact]
+    public void Process_IdenticalChannels_DetectedAsMono()
+    {
+        (double[] left, _, int fs) = ReadStereo(AssetPath("stereo_noise.wav"));
+        var frame = new double[BufferSize];
+        Array.Copy(left, 0, frame, 0, BufferSize);
+
+        var analyzer = new GccPhatAnalyzer(BufferSize, fs, Fmin, Fmax);
+        DelayEstimate result = analyzer.Process(frame, (double[])frame.Clone());
+
+        Assert.Equal(0.0, result.DelayMs, 9);
+        Assert.Equal(0.0, result.DifferenceRatio, 12);
+        Assert.True(result.ZeroLagCorrelation > 0.999,
+            $"Identical channels should have ~1 zero-lag correlation, got {result.ZeroLagCorrelation}.");
     }
 
     [Fact]

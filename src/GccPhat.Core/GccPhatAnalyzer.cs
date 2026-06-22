@@ -13,16 +13,27 @@ namespace GccPhat.Core;
 /// <param name="LevelA">Linear RMS level of the raw channel-1 frame (≈ full-scale 0..1).</param>
 /// <param name="LevelB">Linear RMS level of the raw channel-2 frame (≈ full-scale 0..1).</param>
 /// <param name="Coherence">
-/// Similarity between the two channels: the magnitude of the normalised cross-correlation
+/// Reliability of the delay estimate: the magnitude of the normalised cross-correlation
 /// coefficient of the two raw frames aligned at the estimated lag, in [0, 1].
-/// 1 ≈ the two signals are (delayed) copies of each other; ~0 ≈ unrelated / no common source.
+/// 1 ≈ the channels are (delayed) copies of each other; ~0 ≈ unrelated / no common source.
+/// </param>
+/// <param name="ZeroLagCorrelation">
+/// Signed Pearson correlation of the two channels WITHOUT shifting, in [-1, 1]. Used to tell
+/// a genuine dual signal apart from a "mono duplicated onto both channels" feed:
+/// 1.0 ≈ identical channels (mono/false stereo); lower values ≈ genuinely distinct channels.
+/// </param>
+/// <param name="DifferenceRatio">
+/// Inter-channel difference RMS(A - B) / RMS(A). 0 ⇒ the two channels are bit-identical;
+/// larger values ⇒ the channels carry different signals.
 /// </param>
 public readonly record struct DelayEstimate(
     double DelayMs,
     double Rms,
     double LevelA,
     double LevelB,
-    double Coherence);
+    double Coherence,
+    double ZeroLagCorrelation,
+    double DifferenceRatio);
 
 /// <summary>
 /// Generalized Cross-Correlation with Phase Transform (GCC-PHAT) time-delay estimator,
@@ -167,8 +178,9 @@ public sealed class GccPhatAnalyzer
         double levelA = RmsLevel(channel1);
         double levelB = RmsLevel(channel2);
         double coherence = NormalizedCrossCorrelation(channel1, channel2, maxIndex - half);
+        (double zeroLag, double diffRatio) = CompareChannels(channel1, channel2);
 
-        return new DelayEstimate(delayMs, rms1, levelA, levelB, coherence);
+        return new DelayEstimate(delayMs, rms1, levelA, levelB, coherence, zeroLag, diffRatio);
     }
 
     private static double RmsLevel(double[] frame)
@@ -179,6 +191,33 @@ public sealed class GccPhatAnalyzer
             sum += frame[i] * frame[i];
         }
         return Math.Sqrt(sum / frame.Length);
+    }
+
+    // Compares the two channels WITHOUT shifting, to decide whether they are the same signal
+    // (mono duplicated onto both channels) or genuinely distinct (true dual / stereo):
+    //   zeroLag    = signed Pearson correlation at lag 0, in [-1, 1] (1 ⇒ identical).
+    //   diffRatio  = RMS(A - B) / RMS(A) (0 ⇒ bit-identical channels).
+    private static (double zeroLag, double diffRatio) CompareChannels(double[] a, double[] b)
+    {
+        int n = a.Length;
+        double sab = 0.0;
+        double saa = 0.0;
+        double sbb = 0.0;
+        double sdiff = 0.0;
+        for (int i = 0; i < n; i++)
+        {
+            double av = a[i];
+            double bv = b[i];
+            sab += av * bv;
+            saa += av * av;
+            sbb += bv * bv;
+            double d = av - bv;
+            sdiff += d * d;
+        }
+
+        double zeroLag = (saa <= 1e-12 || sbb <= 1e-12) ? 0.0 : sab / Math.Sqrt(saa * sbb);
+        double diffRatio = saa <= 1e-12 ? 0.0 : Math.Sqrt(sdiff / saa);
+        return (zeroLag, diffRatio);
     }
 
     // |Pearson-style normalised cross-correlation| of the two frames aligned at the given

@@ -9,4 +9,6 @@ public readonly record struct PairResult(
     double LevelA,
     double LevelB,
     double Coherence,
+    double ZeroLagCorrelation,
+    double DifferenceRatio,
     bool Valid);

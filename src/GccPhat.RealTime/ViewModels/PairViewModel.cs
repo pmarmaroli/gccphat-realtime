@@ -10,12 +10,19 @@ public sealed class PairViewModel : ObservableObject
 {
     private const double SignalFloorDb = -60.0;
 
+    // Thresholds for the identical-vs-distinct verdict.
+    private const double NearIdenticalDiff = 0.01;     // RMS(A-B)/RMS(A) < 1%  (~ -40 dB)
+    private const double NearIdenticalCorr = 0.999;    // zero-lag correlation
+
     private static readonly Brush GoodBrush = Freeze(Color.FromRgb(44, 160, 44));
     private static readonly Brush WeakBrush = Freeze(Color.FromRgb(214, 154, 39));
     private static readonly Brush PoorBrush = Freeze(Color.FromRgb(170, 170, 170));
+    private static readonly Brush MonoBrush = Freeze(Color.FromRgb(192, 57, 43));
 
     private double _delayMs;
     private double _coherence;
+    private double _zeroLag;
+    private double _diffRatio;
     private double _levelADb = double.NegativeInfinity;
     private double _levelBDb = double.NegativeInfinity;
     private bool _valid;
@@ -41,12 +48,17 @@ public sealed class PairViewModel : ObservableObject
         {
             _delayMs = result.DelayMs;
             _coherence = result.Coherence;
+            _zeroLag = result.ZeroLagCorrelation;
+            _diffRatio = result.DifferenceRatio;
             _levelADb = ToDb(result.LevelA);
             _levelBDb = ToDb(result.LevelB);
         }
 
         OnPropertyChanged(nameof(DelayText));
-        OnPropertyChanged(nameof(CoherenceText));
+        OnPropertyChanged(nameof(VerdictText));
+        OnPropertyChanged(nameof(VerdictBrush));
+        OnPropertyChanged(nameof(CorrText));
+        OnPropertyChanged(nameof(DiffText));
         OnPropertyChanged(nameof(LevelAText));
         OnPropertyChanged(nameof(LevelBText));
         OnPropertyChanged(nameof(QualityBrush));
@@ -54,16 +66,56 @@ public sealed class PairViewModel : ObservableObject
     }
 
     /// <summary>Clears the live readouts (e.g. when stopped).</summary>
-    public void ClearLive()
-    {
-        _valid = false;
-        SetLive(new PairResult(Pair, 0, 0, 0, 0, 0, 0, Valid: false));
-    }
+    public void ClearLive() => SetLive(new PairResult(Pair, 0, 0, 0, 0, 0, 0, 0, 0, Valid: false));
 
     public string DelayText => _valid ? $"{_delayMs,8:F3} ms" : "    --   ms";
-    public string CoherenceText => _valid ? $"sim {_coherence:F2}" : "sim  -- ";
+    public string CorrText => _valid ? $"r0 {_zeroLag:F4}" : "r0  -- ";
+    public string DiffText => _valid ? $"diff {FormatDb(DiffDb)}" : "diff  -- ";
     public string LevelAText => _valid ? $"A {FormatDb(_levelADb)}" : "A  -- ";
     public string LevelBText => _valid ? $"B {FormatDb(_levelBDb)}" : "B  -- ";
+
+    private double DiffDb => _diffRatio <= 1e-7 ? double.NegativeInfinity : 20.0 * Math.Log10(_diffRatio);
+
+    /// <summary>Verdict: are the two channels the same signal (mono) or genuinely distinct?</summary>
+    public string VerdictText
+    {
+        get
+        {
+            if (!_valid)
+            {
+                return string.Empty;
+            }
+            if (_diffRatio <= 1e-12)
+            {
+                return "IDENTICAL (mono)";
+            }
+            if (_diffRatio < NearIdenticalDiff || _zeroLag > NearIdenticalCorr)
+            {
+                return "near-identical";
+            }
+            return "distinct (true dual)";
+        }
+    }
+
+    public Brush VerdictBrush
+    {
+        get
+        {
+            if (!_valid)
+            {
+                return PoorBrush;
+            }
+            if (_diffRatio <= 1e-12)
+            {
+                return MonoBrush;
+            }
+            if (_diffRatio < NearIdenticalDiff || _zeroLag > NearIdenticalCorr)
+            {
+                return WeakBrush;
+            }
+            return GoodBrush;
+        }
+    }
 
     /// <summary>Short health note: flags channels with no signal, otherwise blank.</summary>
     public string SignalText

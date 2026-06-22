@@ -152,7 +152,7 @@ public sealed class RealTimeEngine : IDisposable
             bool haveB = capture.GetChannel(pair.ChannelB).CopyLatest(frameB);
             if (!haveA || !haveB)
             {
-                results.Add(new PairResult(pair, time, 0, 0, 0, 0, 0, Valid: false));
+                results.Add(new PairResult(pair, time, 0, 0, 0, 0, 0, 0, 0, Valid: false));
                 continue;
             }
 
@@ -160,7 +160,8 @@ public sealed class RealTimeEngine : IDisposable
             DelayEstimate estimate = analyzer.Process(frameA, frameB);
             results.Add(new PairResult(
                 pair, time, estimate.DelayMs, estimate.Rms,
-                estimate.LevelA, estimate.LevelB, estimate.Coherence, Valid: true));
+                estimate.LevelA, estimate.LevelB, estimate.Coherence,
+                estimate.ZeroLagCorrelation, estimate.DifferenceRatio, Valid: true));
         }
 
         return results;

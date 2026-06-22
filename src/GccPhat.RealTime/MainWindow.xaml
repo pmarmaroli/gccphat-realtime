@@ -55,7 +55,7 @@
                     <TextBlock Text="Active pairs" FontWeight="Bold" Margin="0,12,0,4" />
                     <ListBox ItemsSource="{Binding ActivePairs}"
                              SelectedItem="{Binding SelectedPair}"
-                             Height="190">
+                             Height="230">
                         <ListBox.ItemTemplate>
                             <DataTemplate>
                                 <StackPanel Margin="0,3">
@@ -68,8 +68,13 @@
                                         <TextBlock Text="{Binding DelayText}" FontFamily="Consolas" FontWeight="SemiBold" VerticalAlignment="Center" />
                                     </StackPanel>
                                     <StackPanel Orientation="Horizontal" Margin="28,1,0,0">
-                                        <TextBlock Text="{Binding CoherenceText}" FontFamily="Consolas" Foreground="#555" />
-                                        <TextBlock Text="{Binding LevelAText}" FontFamily="Consolas" Foreground="#888" Margin="10,0,0,0" />
+                                        <TextBlock Text="{Binding VerdictText}" FontWeight="Bold"
+                                                   Foreground="{Binding VerdictBrush}" />
+                                        <TextBlock Text="{Binding CorrText}" FontFamily="Consolas" Foreground="#555" Margin="10,0,0,0" />
+                                        <TextBlock Text="{Binding DiffText}" FontFamily="Consolas" Foreground="#555" Margin="10,0,0,0" />
+                                    </StackPanel>
+                                    <StackPanel Orientation="Horizontal" Margin="28,1,0,0">
+                                        <TextBlock Text="{Binding LevelAText}" FontFamily="Consolas" Foreground="#888" />
                                         <TextBlock Text="{Binding LevelBText}" FontFamily="Consolas" Foreground="#888" Margin="10,0,0,0" />
                                     </StackPanel>
                                     <TextBlock Text="{Binding SignalText}" Foreground="#C0392B" FontSize="11" Margin="28,0,0,0" />

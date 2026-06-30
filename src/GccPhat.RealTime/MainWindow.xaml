@@ -4,7 +4,6 @@
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         xmlns:local="clr-namespace:GccPhat.RealTime"
-        xmlns:sp="clr-namespace:ScottPlot.WPF;assembly=ScottPlot.WPF"
         mc:Ignorable="d"
         Title="GCC-PHAT // Real-Time Microphone Array" Height="900" Width="1480"
         Background="{StaticResource BgBrush}" FontFamily="Segoe UI" FontSize="14" TextOptions.TextFormattingMode="Display">
@@ -25,10 +24,22 @@
             <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="12,12,10,12">
                 <StackPanel>
 
-                    <TextBlock Margin="2,0,0,14">
-                        <Run Text="&#9670; GCC-PHAT" Foreground="{StaticResource AccentBrush}" FontFamily="Consolas" FontWeight="Bold" FontSize="22" />
-                        <Run Text="// REALTIME" Foreground="{StaticResource TextDimBrush}" FontFamily="Consolas" FontSize="22" />
-                    </TextBlock>
+                    <DockPanel Margin="2,0,0,14">
+                        <Grid DockPanel.Dock="Right">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <Button Grid.Column="0" Content="START" Height="40" MinWidth="96" FontSize="15" Margin="0,0,8,0"
+                                    Style="{StaticResource AccentButton}" Command="{Binding StartCommand}" />
+                            <Button Grid.Column="1" Content="STOP" Height="40" MinWidth="96" FontSize="15"
+                                    Command="{Binding StopCommand}" />
+                        </Grid>
+                        <TextBlock VerticalAlignment="Center">
+                            <Run Text="&#9670; GCC-PHAT" Foreground="{StaticResource AccentBrush}" FontFamily="Consolas" FontWeight="Bold" FontSize="22" />
+                            <Run Text="// REALTIME" Foreground="{StaticResource TextDimBrush}" FontFamily="Consolas" FontSize="22" />
+                        </TextBlock>
+                    </DockPanel>
 
                     <!-- Device -->
                     <Border Style="{StaticResource Card}">
@@ -76,59 +87,71 @@
                         </StackPanel>
                     </Border>
 
-                    <!-- Channel pairs -->
+                    <!-- Geometry -->
                     <Border Style="{StaticResource Card}">
                         <StackPanel>
-                            <TextBlock Style="{StaticResource SectionHeader}" Text="CHANNEL PAIRS" />
-                            <Grid>
+                            <ToggleButton x:Name="LocalizationToggle" Style="{StaticResource ExpanderHeader}"
+                                          Content="GEOMETRY" IsChecked="False" Margin="0,0,0,8" />
+                            <StackPanel Visibility="{Binding IsChecked, ElementName=LocalizationToggle, Converter={StaticResource BoolToVis}}">
+                            <TextBlock Text="Microphone layout and channel mapping used by both localization and beamforming."
+                                       Foreground="{StaticResource TextDimBrush}" Margin="0,0,0,8" TextWrapping="Wrap" />
+                            <Grid IsEnabled="{Binding CanEditConfig}">
                                 <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="*" />
-                                    <ColumnDefinition Width="*" />
                                     <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="*" />
                                 </Grid.ColumnDefinitions>
-                                <StackPanel Grid.Column="0" Margin="0,0,6,0">
-                                    <TextBlock Text="A" Foreground="{StaticResource TextDimBrush}" />
-                                    <ComboBox ItemsSource="{Binding AvailableChannels}" SelectedItem="{Binding SelectedChannelA}" />
-                                </StackPanel>
-                                <StackPanel Grid.Column="1" Margin="0,0,6,0">
-                                    <TextBlock Text="B" Foreground="{StaticResource TextDimBrush}" />
-                                    <ComboBox ItemsSource="{Binding AvailableChannels}" SelectedItem="{Binding SelectedChannelB}" />
-                                </StackPanel>
-                                <Button Grid.Column="2" Content="Add" Width="72" VerticalAlignment="Bottom"
-                                        Command="{Binding AddPairCommand}" />
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                </Grid.RowDefinitions>
+                                <TextBlock Grid.Row="0" Grid.Column="0" Text="Array" Foreground="{StaticResource TextDimBrush}" VerticalAlignment="Center" Margin="0,4" />
+                                <ComboBox Grid.Row="0" Grid.Column="1" Margin="8,4" ItemsSource="{Binding LayoutOptions}" SelectedItem="{Binding SelectedLayout}" />
+                                <TextBlock Grid.Row="1" Grid.Column="0" Text="Mic count" Foreground="{StaticResource TextDimBrush}" VerticalAlignment="Center" Margin="0,4" />
+                                <TextBox Grid.Row="1" Grid.Column="1" Margin="8,4" Text="{Binding MicCount}" />
+                                <TextBlock Grid.Row="2" Grid.Column="0" Text="Diameter (cm)" Foreground="{StaticResource TextDimBrush}" VerticalAlignment="Center" Margin="0,4"
+                                           Visibility="{Binding IsCircular, Converter={StaticResource BoolToVis}}" />
+                                <TextBox Grid.Row="2" Grid.Column="1" Margin="8,4" Text="{Binding DiameterCm}"
+                                         Visibility="{Binding IsCircular, Converter={StaticResource BoolToVis}}" />
+                                <TextBlock Grid.Row="2" Grid.Column="0" Text="Spacing (cm)" Foreground="{StaticResource TextDimBrush}" VerticalAlignment="Center" Margin="0,4"
+                                           Visibility="{Binding IsLinear, Converter={StaticResource BoolToVis}}" />
+                                <TextBox Grid.Row="2" Grid.Column="1" Margin="8,4" Text="{Binding SpacingCm}"
+                                         Visibility="{Binding IsLinear, Converter={StaticResource BoolToVis}}" />
+                                <CheckBox Grid.Row="3" Grid.Column="1" Margin="8,6,4,2" Content="Additional mic in the center"
+                                         IsChecked="{Binding HasCenterMic}"
+                                         Visibility="{Binding IsCircular, Converter={StaticResource BoolToVis}}" />
                             </Grid>
 
-                            <ListBox ItemsSource="{Binding ActivePairs}" SelectedItem="{Binding SelectedPair}"
-                                     Height="130" Margin="0,10,0,0">
-                                <ListBox.ItemTemplate>
+                            <TextBlock Text="Assign channel to each position" Foreground="{StaticResource TextDimBrush}" Margin="0,8,0,2" FontSize="12" />
+                            <ItemsControl ItemsSource="{Binding MicPositions}" IsEnabled="{Binding CanEditConfig}">
+                                <ItemsControl.ItemTemplate>
                                     <DataTemplate>
-                                        <StackPanel Margin="0,4">
-                                            <StackPanel Orientation="Horizontal">
-                                                <Ellipse Width="13" Height="13" Margin="0,0,8,0"
-                                                         Fill="{Binding QualityBrush}" VerticalAlignment="Center" />
-                                                <Rectangle Width="14" Height="14" Margin="0,0,8,0"
-                                                           Fill="{Binding ColorBrush}" VerticalAlignment="Center" />
-                                                <TextBlock Text="{Binding Label}" Width="86" VerticalAlignment="Center"
-                                                           FontSize="15" Foreground="{StaticResource TextBrush}" />
-                                                <TextBlock Text="{Binding DelayText}" FontFamily="Consolas" FontSize="17" FontWeight="SemiBold"
-                                                           Foreground="{StaticResource AccentBrush}" VerticalAlignment="Center" />
-                                            </StackPanel>
-                                            <StackPanel Orientation="Horizontal" Margin="34,2,0,0">
-                                                <TextBlock Text="{Binding VerdictText}" FontSize="14" FontWeight="Bold" Foreground="{Binding VerdictBrush}" />
-                                                <TextBlock Text="{Binding CorrText}" FontFamily="Consolas" FontSize="14" Foreground="{StaticResource TextDimBrush}" Margin="12,0,0,0" />
-                                                <TextBlock Text="{Binding DiffText}" FontFamily="Consolas" FontSize="14" Foreground="{StaticResource TextDimBrush}" Margin="12,0,0,0" />
-                                            </StackPanel>
-                                            <StackPanel Orientation="Horizontal" Margin="34,2,0,0">
-                                                <TextBlock Text="{Binding LevelAText}" FontFamily="Consolas" FontSize="14" Foreground="{StaticResource TextDimBrush}" />
-                                                <TextBlock Text="{Binding LevelBText}" FontFamily="Consolas" FontSize="14" Foreground="{StaticResource TextDimBrush}" Margin="12,0,0,0" />
-                                            </StackPanel>
-                                            <TextBlock Text="{Binding SignalText}" Foreground="{StaticResource DangerBrush}" FontSize="13" Margin="34,0,0,0" />
-                                        </StackPanel>
+                                        <Grid Margin="0,3">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="58" />
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="92" />
+                                            </Grid.ColumnDefinitions>
+                                            <TextBlock Grid.Column="0" Text="{Binding Name}" FontFamily="Consolas" Foreground="{StaticResource TextBrush}" VerticalAlignment="Center" />
+                                            <TextBlock Grid.Column="1" Text="{Binding CoordText}" FontFamily="Consolas" FontSize="12" Foreground="{StaticResource TextDimBrush}" VerticalAlignment="Center" />
+                                            <ComboBox Grid.Column="2" ItemsSource="{Binding AvailableChannels}" SelectedItem="{Binding Channel}" />
+                                        </Grid>
                                     </DataTemplate>
-                                </ListBox.ItemTemplate>
-                            </ListBox>
-                            <Button Content="Remove selected pair" Margin="0,8,0,0" HorizontalAlignment="Left" Width="200"
-                                    Command="{Binding RemoveSelectedPairCommand}" />
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+
+                            <Grid Margin="0,8,0,0">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Grid.Column="0" Text="Threshold (dB)" Foreground="{StaticResource TextDimBrush}" VerticalAlignment="Center" />
+                                <TextBox Grid.Column="1" Margin="8,0,0,0" Text="{Binding LevelThresholdDb}" />
+                            </Grid>
+                            <TextBlock Text="{Binding LevelText}" FontFamily="Consolas" FontSize="13" Foreground="{StaticResource TextDimBrush}" Margin="0,4,0,0" />
+
+                            </StackPanel>
                         </StackPanel>
                     </Border>
 
@@ -164,73 +187,72 @@
                         </StackPanel>
                     </Border>
 
-                    <!-- Plot axes -->
-                    <Border Style="{StaticResource Card}">
-                        <StackPanel>
-                            <TextBlock Style="{StaticResource SectionHeader}" Text="PLOT AXES" />
-
-                            <Grid>
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="*" />
-                                    <ColumnDefinition Width="16" />
-                                    <ColumnDefinition Width="*" />
-                                </Grid.ColumnDefinitions>
-
-                                <!-- X axis -->
-                                <StackPanel Grid.Column="0">
-                                    <TextBlock Text="X axis (time)" Foreground="{StaticResource TextBrush}" Margin="0,0,0,4" />
-                                    <CheckBox Content="Auto (full)" IsChecked="{Binding XAutoScale}" Margin="0,0,0,6" />
-                                    <Grid IsEnabled="{Binding CanEditXRange}">
-                                        <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="Auto" />
-                                            <ColumnDefinition Width="*" />
-                                        </Grid.ColumnDefinitions>
-                                        <TextBlock Grid.Column="0" Text="window (s)" Foreground="{StaticResource TextDimBrush}" VerticalAlignment="Center" />
-                                        <TextBox Grid.Column="1" Margin="8,0,0,0" Text="{Binding XWindowSeconds}" />
-                                    </Grid>
-                                </StackPanel>
-
-                                <!-- Y axis -->
-                                <StackPanel Grid.Column="2">
-                                    <TextBlock Text="Y axis (delay, ms)" Foreground="{StaticResource TextBrush}" Margin="0,0,0,4" />
-                                    <CheckBox Content="Auto-scale" IsChecked="{Binding YAutoScale}" Margin="0,0,0,6" />
-                                    <Grid IsEnabled="{Binding CanEditYRange}">
-                                        <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="Auto" />
-                                            <ColumnDefinition Width="*" />
-                                            <ColumnDefinition Width="Auto" />
-                                            <ColumnDefinition Width="*" />
-                                        </Grid.ColumnDefinitions>
-                                        <TextBlock Grid.Column="0" Text="min" Foreground="{StaticResource TextDimBrush}" VerticalAlignment="Center" />
-                                        <TextBox Grid.Column="1" Margin="5,0" Text="{Binding YMin}" />
-                                        <TextBlock Grid.Column="2" Text="max" Foreground="{StaticResource TextDimBrush}" VerticalAlignment="Center" />
-                                        <TextBox Grid.Column="3" Margin="5,0,0,0" Text="{Binding YMax}" />
-                                    </Grid>
-                                </StackPanel>
-                            </Grid>
-                        </StackPanel>
-                    </Border>
-
-                    <!-- Transport -->
-                    <Grid Margin="0,2,0,4">
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="*" />
-                            <ColumnDefinition Width="*" />
-                        </Grid.ColumnDefinitions>
-                        <Button Grid.Column="0" Content="START" Height="48" FontSize="16" Margin="0,0,5,0"
-                                Style="{StaticResource AccentButton}" Command="{Binding StartCommand}" />
-                        <Button Grid.Column="1" Content="STOP" Height="48" FontSize="16" Margin="5,0,0,0"
-                                Command="{Binding StopCommand}" />
-                    </Grid>
-
                 </StackPanel>
             </ScrollViewer>
         </Border>
 
-        <!-- ===================== Plot ===================== -->
-        <Border Margin="12" Background="{StaticResource PanelBrush}"
-                BorderBrush="{StaticResource PanelBorderBrush}" BorderThickness="1" CornerRadius="6" Padding="6">
-            <sp:WpfPlot x:Name="DelayPlot" />
-        </Border>
+        <!-- ===================== Tool launcher ===================== -->
+        <Grid Margin="12">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="16" />
+                <RowDefinition Height="*" />
+            </Grid.RowDefinitions>
+
+            <Border Grid.Row="0" Background="{StaticResource PanelBrush}"
+                    BorderBrush="{StaticResource PanelBorderBrush}" BorderThickness="1" CornerRadius="6" Padding="18">
+                <StackPanel>
+                    <TextBlock Margin="0,0,0,8">
+                        <Run Text="TOOLS" Foreground="{StaticResource AccentBrush}" FontFamily="Consolas" FontWeight="Bold" FontSize="22" />
+                        <Run Text=" // choose a workspace" Foreground="{StaticResource TextDimBrush}" FontFamily="Consolas" FontSize="22" />
+                    </TextBlock>
+                    <TextBlock Text="Configuration stays here. Visualization and listening open in their own focused windows."
+                               Foreground="{StaticResource TextDimBrush}" TextWrapping="Wrap" />
+                </StackPanel>
+            </Border>
+
+            <UniformGrid Grid.Row="2" Columns="3" HorizontalAlignment="Stretch" VerticalAlignment="Top">
+                <Border Style="{StaticResource Card}" Margin="0,0,10,0">
+                    <StackPanel>
+                        <TextBlock Text="DELAY VIEW" Style="{StaticResource SectionHeader}" />
+                        <TextBlock Text="Live delay traces and per-pair readouts in a dedicated window."
+                                   Foreground="{StaticResource TextDimBrush}" TextWrapping="Wrap" Margin="0,0,0,8" />
+                        <TextBlock Text="{Binding DelayToolRequirementsText}"
+                                   Foreground="{StaticResource TextDimBrush}" FontSize="12" TextWrapping="Wrap" />
+                        <TextBlock Text="{Binding DelayToolStatusText}"
+                                   Foreground="{StaticResource AccentBrush}" FontSize="12" Margin="0,6,0,12" TextWrapping="Wrap" />
+                        <Button Content="Open delay view &#8599;" Height="42" Click="OnShowDelayView" />
+                    </StackPanel>
+                </Border>
+
+                <Border Style="{StaticResource Card}" Margin="5,0">
+                    <StackPanel>
+                        <TextBlock Text="LOCALIZATION" Style="{StaticResource SectionHeader}" />
+                        <TextBlock Text="Compass-style array map driven by SRP-PHAT source azimuth."
+                                   Foreground="{StaticResource TextDimBrush}" TextWrapping="Wrap" Margin="0,0,0,8" />
+                        <TextBlock Text="{Binding LocalizationToolRequirementsText}"
+                                   Foreground="{StaticResource TextDimBrush}" FontSize="12" TextWrapping="Wrap" />
+                        <TextBlock Text="{Binding LocalizationToolStatusText}"
+                                   Foreground="{StaticResource AccentBrush}" FontSize="12" Margin="0,6,0,12" TextWrapping="Wrap" />
+                        <Button Content="Open array map &#8599;" Height="42" Click="OnShowArrayMap" />
+                    </StackPanel>
+                </Border>
+
+                <Border Style="{StaticResource Card}" Margin="10,0,0,0" Opacity="0.45" IsEnabled="False">
+                    <StackPanel>
+                        <TextBlock Text="BEAMFORMER" Style="{StaticResource SectionHeader}" />
+                        <TextBlock Text="Steer a listening beam to a chosen azimuth and monitor the listening state."
+                                   Foreground="{StaticResource TextDimBrush}" TextWrapping="Wrap" Margin="0,0,0,8" />
+                        <TextBlock Text="Temporarily disabled — panel not ready yet."
+                                   Foreground="{StaticResource AccentBrush}" FontSize="12" Margin="0,0,0,8" TextWrapping="Wrap" />
+                        <TextBlock Text="{Binding BeamformerToolRequirementsText}"
+                                   Foreground="{StaticResource TextDimBrush}" FontSize="12" TextWrapping="Wrap" />
+                        <TextBlock Text="{Binding BeamformerToolStatusText}"
+                                   Foreground="{StaticResource AccentBrush}" FontSize="12" Margin="0,6,0,12" TextWrapping="Wrap" />
+                        <Button Content="Open beamformer &#8599;" Height="42" Click="OnShowBeamformer" />
+                    </StackPanel>
+                </Border>
+            </UniformGrid>
+        </Grid>
     </DockPanel>
 </Window>

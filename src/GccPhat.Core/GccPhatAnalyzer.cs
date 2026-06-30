@@ -136,29 +136,9 @@ public sealed class GccPhatAnalyzer
             throw new ArgumentException($"Both frames must have length {_nfft}.");
         }
 
-        double rms1 = Colore(channel1, _fS1);
-        Colore(channel2, _fS2);
+        double rms1 = ComputeCorrelation(channel1, channel2);
 
         int n = _nfft;
-        for (int i = 0; i < n; i++)
-        {
-            Complex pxy = _fS1[i] * Complex.Conjugate(_fS2[i]);
-            if (_phat)
-            {
-                double abs = Complex.Abs(pxy);
-                double denom = abs < 1e-6 ? 1e-6 : abs;
-                _gRe[i] = (pxy / new Complex(denom, 0.0)).Real;
-                _gIm[i] = (pxy / new Complex(denom, 0.0)).Imaginary;
-            }
-            else
-            {
-                _gRe[i] = pxy.Real;
-                _gIm[i] = pxy.Imaginary;
-            }
-        }
-
-        _fft.Run(_gRe, _gIm, inverse: true);
-
         int half = n / 2;
         int maxIndex = 0;
         double maxG = double.MinValue;
@@ -181,6 +161,60 @@ public sealed class GccPhatAnalyzer
         (double zeroLag, double diffRatio) = CompareChannels(channel1, channel2);
 
         return new DelayEstimate(delayMs, rms1, levelA, levelB, coherence, zeroLag, diffRatio);
+    }
+
+    /// <summary>
+    /// Computes the centred GCC-PHAT cross-correlation of two equally-sized frames (length must
+    /// equal <see cref="Nfft"/>) into <paramref name="dst"/> (also length <see cref="Nfft"/>):
+    /// <c>dst[i]</c> is the correlation at integer lag <c>i - Nfft/2</c>, so the centre bin is the
+    /// zero-lag value. This is the per-pair input consumed by <see cref="SrpPhatLocalizer"/>.
+    /// </summary>
+    public void CrossCorrelation(double[] channel1, double[] channel2, double[] dst)
+    {
+        if (channel1 is null) throw new ArgumentNullException(nameof(channel1));
+        if (channel2 is null) throw new ArgumentNullException(nameof(channel2));
+        if (dst is null) throw new ArgumentNullException(nameof(dst));
+        if (channel1.Length != _nfft || channel2.Length != _nfft || dst.Length != _nfft)
+        {
+            throw new ArgumentException($"All frames must have length {_nfft}.");
+        }
+
+        ComputeCorrelation(channel1, channel2);
+        int n = _nfft;
+        int half = n / 2;
+        for (int i = 0; i < n; i++)
+        {
+            dst[i] = _gRe[(i + half) % n];
+        }
+    }
+
+    // Builds the PHAT cross-spectrum of the two channels and inverse-transforms it into the
+    // time-domain correlation _gRe (lag 0 at index 0, wrapped). Returns RMS of channel 1.
+    private double ComputeCorrelation(double[] channel1, double[] channel2)
+    {
+        double rms1 = Colore(channel1, _fS1);
+        Colore(channel2, _fS2);
+
+        int n = _nfft;
+        for (int i = 0; i < n; i++)
+        {
+            Complex pxy = _fS1[i] * Complex.Conjugate(_fS2[i]);
+            if (_phat)
+            {
+                double abs = Complex.Abs(pxy);
+                double denom = abs < 1e-6 ? 1e-6 : abs;
+                _gRe[i] = (pxy / new Complex(denom, 0.0)).Real;
+                _gIm[i] = (pxy / new Complex(denom, 0.0)).Imaginary;
+            }
+            else
+            {
+                _gRe[i] = pxy.Real;
+                _gIm[i] = pxy.Imaginary;
+            }
+        }
+
+        _fft.Run(_gRe, _gIm, inverse: true);
+        return rms1;
     }
 
     private static double RmsLevel(double[] frame)

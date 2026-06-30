@@ -42,6 +42,31 @@ public static class DeviceEnumerator
         return result;
     }
 
+    public static IReadOnlyList<RenderDeviceInfo> ListRenderDevices()
+    {
+        var result = new List<RenderDeviceInfo>();
+        var enumerator = new MMDeviceEnumerator();
+        foreach (MMDevice device in enumerator.EnumerateAudioEndPoints(DataFlow.Render, DeviceState.Active))
+        {
+            result.Add(new RenderDeviceInfo(device));
+        }
+
+        return result;
+    }
+
+    public static string? GetDefaultRenderDeviceId()
+    {
+        try
+        {
+            var enumerator = new MMDeviceEnumerator();
+            return enumerator.GetDefaultAudioEndpoint(DataFlow.Render, Role.Multimedia).ID;
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
     /// <summary>Reads the device's native (hardware) format from its property store, if available.</summary>
     private static WaveFormat? TryReadNativeFormat(MMDevice device)
     {

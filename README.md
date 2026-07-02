@@ -38,6 +38,22 @@ watch the inter-microphone delay evolve live as a source moves around the array.
 - Mic geometry editor (circular or linear layout, mic count, diameter/spacing, optional center mic)
   mapped to capture channels and shared by the localizer and the beamformer.
 
+**Combined Localization (two arrays)**
+
+- Triangulates a single 2D (x, y) source fix from two independently running analysis sessions'
+  live SRP-PHAT azimuths, given the physical offset between the two arrays (Δx, Δy, Δz cm).
+- **Array sync calibration**: bring the two arrays' closest microphones together, clap, and hit
+  "Measure sync" — the measured GCC-PHAT delay between them is ≈ the clock/stream offset between
+  the two independently-clocked capture devices (real acoustic delay ≈ 0 when the mics are
+  touching). No continuous drift tracking — recalibrating requires bringing the arrays back
+  together, which conflicts with the real experiment — so it's a one-shot manual measurement with
+  a "Recalibrate" button to redo it any time.
+- Once calibrated, a throttled live **cross-check** compares the predicted near-field TDOA (from
+  known mic geometry + the current triangulated fix) against the measured, clock-corrected TDOA on
+  the same mic pair, shown as a green/amber readout — it corroborates (or flags disagreement with)
+  the triangulated fix without recomputing it.
+- Opens as its own window; combines any two currently open, running analysis sessions.
+
 **Beamformer (steerable delay-and-sum listening)**
 
 - Frequency-domain delay-and-sum with fractional steering delays, reconstructed by **weighted
@@ -91,6 +107,14 @@ When beam listening is enabled, the analysis thread also feeds a weighted-overla
 that reads contiguous hop-sized blocks from the same ring buffers, steers and sums the selected
 channels, and pushes the reconstructed mono stream to the chosen render device (NAudio `WasapiOut`).
 
+**Combined Localization** is a lightweight coordinator on top of two independent sessions — it
+watches each session's live `AzimuthDeg` and triangulates, never fusing raw audio. Sync
+calibration and the cross-check are the one exception: they borrow each session's
+`RealTimeEngine` for short, explicit `TryCopyLatestChannel` reads (see
+`CombinedLocalizationViewModel`), not a continuously-running joint audio pipeline — there is
+deliberately no attempt at sample-accurate joint beamforming across the two devices' independent
+clocks.
+
 The DSP lives in a reusable, dependency-free library, **`GccPhat.Core`**:
 
 - `Fft2` — in-place radix-2 complex FFT (flat reusable buffers, allocation-free per call).
@@ -100,6 +124,8 @@ The DSP lives in a reusable, dependency-free library, **`GccPhat.Core`**:
   Exposes the coarse scan power buffer and a `ScanHemisphere()` method for the 2-D heat map.
 - `Beamformer` — frequency-domain delay-and-sum with fractional steering delays and an optional
   spatial passband (the overlap-add windowing/streaming is driven by the real-time engine).
+- `NearFieldTdoa` — near-field point-source TDOA prediction, used by the Combined Localization
+  sync cross-check to compare a predicted delay against a measured, clock-corrected one.
 
 `GccPhat.Core` is a faithful, instance-based port of the
 [`gccphat`](https://github.com/pmarmaroli/gccphat) CLI algorithm and reproduces its
@@ -116,18 +142,19 @@ Same as the original `gccphat` CLI:
 
 ```
 src/
-  GccPhat.Core/             DSP library (FFT, GCC-PHAT, SRP-PHAT, beamformer) — no UI/audio deps
+  GccPhat.Core/             DSP library (FFT, GCC-PHAT, SRP-PHAT, beamformer, near-field TDOA) — no UI/audio deps
   GccPhat.RealTime/
-    Analysis/               RealTimeEngine, ChannelPair, AudioResampler, YamNetClassifier
+    Analysis/               RealTimeEngine, ChannelPair, AudioResampler, YamNetClassifier, SyncCalibration
     Audio/                  MultichannelCapture + ChannelRingBuffer (WASAPI, NAudio)
-    ViewModels/             MainViewModel, PairViewModel, ClassificationViewModel, …
+    ViewModels/             MainViewModel, PairViewModel, ClassificationViewModel, CombinedLocalizationViewModel, …
     Assets/                 yamnet.onnx + yamnet_class_map.csv (downloaded by start.bat)
     ArrayMapWindow          Compass + mic geometry + polar spectrum + hemisphere heat map
+    CombinedLocalizationWindow  Two-array triangulated fix + sync calibration + cross-check
     ClassificationWindow    Top-10 sound event results with score bars
     BeamformerWindow        Beam steering + channel selection + passband toggle
     DelayViewWindow         Live ScottPlot delay chart + per-pair readouts
 tests/
-  GccPhat.Core.Tests/       xUnit tests: bit-exact GCC-PHAT vs the gccphat CLI, plus SRP-PHAT
+  GccPhat.Core.Tests/       xUnit tests: bit-exact GCC-PHAT vs the gccphat CLI, plus SRP-PHAT and near-field TDOA
 ```
 
 ## Build & run
@@ -196,9 +223,10 @@ time resolution of the live plot. See the
 
 ## Roadmap
 
-- **Multi-device capture** (phase 2): combine several separate input devices. Note that
-  independent devices run on independent clocks, so cross-device correlation is subject to
-  drift/offset and needs resampling/synchronisation — it will ship with clear warnings.
+- **Combined Beamforming**: a single coherent delay-and-sum beam across both arrays' microphones,
+  rather than two independently-steered beams. Needs continuous clock-drift correction beyond the
+  one-shot sync calibration already shipped for Combined Localization — deferred until that's
+  proven necessary; the sync-offset measurement it would build on already exists.
 - Optional CSV logging of the real-time delay streams.
 - **Sub-band beamforming**: steer only within the array's useful band while passing a full-band
   reference outside it, so listening stays wide-band without sacrificing spatial selectivity.

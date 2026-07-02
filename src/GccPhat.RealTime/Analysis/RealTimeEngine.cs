@@ -88,6 +88,30 @@ public sealed class RealTimeEngine : IDisposable
 
     public bool IsRunning { get; private set; }
 
+    /// <summary>Capture sample rate (Hz) of the currently running session, or 0 if not running.</summary>
+    public int SampleRate
+    {
+        get { lock (_gate) { return _capture?.SampleRate ?? 0; } }
+    }
+
+    /// <summary>
+    /// Copies the most recent <c>dest.Length</c> samples of the given capture channel into
+    /// <paramref name="dest"/>. Returns false if capture isn't running, the channel index is out of
+    /// range, or not enough samples have been captured yet. Safe to call from any thread concurrently
+    /// with the engine's own analysis tick (the underlying ring buffer is lock-guarded) — intended
+    /// for one-shot UI-triggered reads (e.g. array sync calibration), not per-tick analysis.
+    /// </summary>
+    public bool TryCopyLatestChannel(int channel, double[] dest)
+    {
+        MultichannelCapture? capture;
+        lock (_gate) { capture = _capture; }
+        if (capture is null || channel < 0 || channel >= capture.ChannelCount)
+        {
+            return false;
+        }
+        return capture.GetChannel(channel).CopyLatest(dest);
+    }
+
     public void Configure(int bufferSize, int fmin, int fmax, int updateIntervalMs)
     {
         lock (_gate)

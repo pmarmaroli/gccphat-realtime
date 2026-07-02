@@ -1,6 +1,10 @@
 using System;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
+using System.Windows.Media;
+using System.Windows.Threading;
+using GccPhat.Core;
+using GccPhat.RealTime.Analysis;
 using GccPhat.RealTime.Mvvm;
 
 namespace GccPhat.RealTime.ViewModels;
@@ -17,6 +21,21 @@ public sealed class CombinedLocalizationViewModel : ObservableObject, IDisposabl
     // |sin(azA - azB)| below this is treated as parallel bearings (no usable fix).
     private const double ParallelEpsilon = 0.001;
 
+    // Sync calibration: capture windows, broadband band, and quality gates. Calibration uses a
+    // larger backward-looking window than the live cross-check because it's a "clap, then click"
+    // gesture — the transient needs to still be inside the "latest N samples" grab by the time the
+    // user reacts and clicks the button.
+    private const int CalibrationWindowSamples = 32768; // ~683 ms @ 48 kHz
+    private const int SyncWindowSamples = 8192;          // ~171 ms @ 48 kHz
+    private const int SyncFmin = 200;
+    private const int SyncFmaxCap = 8000;
+    private const double MinCalibrationCoherence = 0.3;
+    private const double CrossCheckGoodToleranceSamples = 2.0;
+    private const string SyncIdleText = "Bring the two arrays' closest mics together, position your mouse over Measure sync, clap once near the touching mics, then click immediately.";
+
+    private static readonly Brush GoodBrush = Freeze(Color.FromRgb(44, 160, 44));
+    private static readonly Brush WarnBrush = Freeze(Color.FromRgb(214, 154, 39));
+
     private MainViewModel? _sessionA;
     private MainViewModel? _sessionB;
     private double _offsetXCm;
@@ -26,8 +45,20 @@ public sealed class CombinedLocalizationViewModel : ObservableObject, IDisposabl
     private double? _sourceXCm;
     private double? _sourceYCm;
 
+    private int? _syncChannelA;
+    private int? _syncChannelB;
+    private SyncCalibration? _calibration;
+    private string _syncStatusText = SyncIdleText;
+    private string _crossCheckText = "Cross-check: calibrate sync first.";
+    private Brush _crossCheckBrush = WarnBrush;
+    private readonly DispatcherTimer _crossCheckTimer;
+
     public CombinedLocalizationViewModel()
     {
+        _crossCheckTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(300) };
+        _crossCheckTimer.Tick += (_, _) => UpdateCrossCheck();
+        MeasureSyncCommand = new RelayCommand(MeasureSync, CanMeasureSync);
+
         RefreshSessions();
         MainViewModel.OpenSessionsChanged += OnOpenSessionsChanged;
     }
@@ -43,11 +74,13 @@ public sealed class CombinedLocalizationViewModel : ObservableObject, IDisposabl
             {
                 return;
             }
+            ClearCalibration();
             Unhook(_sessionA);
             _sessionA = value;
             Hook(_sessionA);
             OnPropertyChanged();
             Recompute();
+            MeasureSyncCommand.RaiseCanExecuteChanged();
         }
     }
 
@@ -60,11 +93,13 @@ public sealed class CombinedLocalizationViewModel : ObservableObject, IDisposabl
             {
                 return;
             }
+            ClearCalibration();
             Unhook(_sessionB);
             _sessionB = value;
             Hook(_sessionB);
             OnPropertyChanged();
             Recompute();
+            MeasureSyncCommand.RaiseCanExecuteChanged();
         }
     }
 
@@ -114,6 +149,51 @@ public sealed class CombinedLocalizationViewModel : ObservableObject, IDisposabl
     /// <summary>True while fewer than two analysis windows are open — drives the "open another window" hint.</summary>
     public bool NeedsMoreSessions => AvailableSessions.Count < 2;
 
+    /// <summary>Sync calibration mic on Session A — pick the mic physically closest to Session B when calibrating.</summary>
+    public int? SyncChannelA
+    {
+        get => _syncChannelA;
+        set { if (SetProperty(ref _syncChannelA, value)) MeasureSyncCommand.RaiseCanExecuteChanged(); }
+    }
+
+    /// <summary>Sync calibration mic on Session B — pick the mic physically closest to Session A when calibrating.</summary>
+    public int? SyncChannelB
+    {
+        get => _syncChannelB;
+        set { if (SetProperty(ref _syncChannelB, value)) MeasureSyncCommand.RaiseCanExecuteChanged(); }
+    }
+
+    public string SyncStatusText
+    {
+        get => _syncStatusText;
+        private set => SetProperty(ref _syncStatusText, value);
+    }
+
+    public string CrossCheckText
+    {
+        get => _crossCheckText;
+        private set => SetProperty(ref _crossCheckText, value);
+    }
+
+    public Brush CrossCheckBrush
+    {
+        get => _crossCheckBrush;
+        private set => SetProperty(ref _crossCheckBrush, value);
+    }
+
+    public bool HasCalibration => _calibration is not null;
+
+    public string CalibrationSummaryText => _calibration is SyncCalibration c
+        ? $"Synced Ch{c.ChannelA}↔Ch{c.ChannelB}: offset {c.OffsetSamples:F0} samples (coherence {c.Coherence:F2}), {FormatElapsed(DateTime.UtcNow - c.MeasuredAtUtc)} ago."
+        : "Not calibrated yet.";
+
+    public string MeasureSyncButtonText => HasCalibration ? "Recalibrate" : "Measure sync";
+
+    public RelayCommand MeasureSyncCommand { get; }
+
+    private static string FormatElapsed(TimeSpan elapsed)
+        => elapsed.TotalSeconds < 60 ? $"{elapsed.TotalSeconds:F0}s" : $"{elapsed.TotalMinutes:F0}m";
+
     private void OnOpenSessionsChanged() => RefreshSessions();
 
     private void RefreshSessions()
@@ -157,6 +237,16 @@ public sealed class CombinedLocalizationViewModel : ObservableObject, IDisposabl
         if (e.PropertyName is nameof(MainViewModel.AzimuthDeg) or nameof(MainViewModel.HasVisibleLocalizationAzimuth))
         {
             Recompute();
+        }
+        if (e.PropertyName == nameof(MainViewModel.IsRunning))
+        {
+            // Stopping either session recreates its capture stream on the next Start, which
+            // invalidates any previously measured clock offset — not just a session swap does.
+            if (sender is MainViewModel session && !session.IsRunning)
+            {
+                ClearCalibration();
+            }
+            MeasureSyncCommand.RaiseCanExecuteChanged();
         }
     }
 
@@ -215,8 +305,189 @@ public sealed class CombinedLocalizationViewModel : ObservableObject, IDisposabl
         FixStatusText = message;
     }
 
+    private bool CanMeasureSync()
+        => _sessionA is not null && _sessionB is not null && !ReferenceEquals(_sessionA, _sessionB)
+           && _sessionA.IsRunning && _sessionB.IsRunning
+           && _syncChannelA is int && _syncChannelB is int;
+
+    // One-shot clock-offset measurement: captures a broadband window from each session's sync
+    // channel and cross-correlates it with GCC-PHAT. Intended to be run while the two arrays'
+    // sync mics are physically touching, so the measured delay is ~ pure clock/stream offset
+    // rather than a real acoustic delay.
+    private void MeasureSync()
+    {
+        if (!CanMeasureSync())
+        {
+            SyncStatusText = "Pick two distinct, running sessions and a sync channel on each first.";
+            return;
+        }
+
+        MainViewModel sessionA = _sessionA!;
+        MainViewModel sessionB = _sessionB!;
+        int channelA = _syncChannelA!.Value;
+        int channelB = _syncChannelB!.Value;
+
+        int fsA = sessionA.Engine.SampleRate;
+        int fsB = sessionB.Engine.SampleRate;
+        if (fsA <= 0 || fsB <= 0)
+        {
+            SyncStatusText = "One of the sessions isn't capturing yet.";
+            return;
+        }
+        if (fsA != fsB)
+        {
+            SyncStatusText = $"Sessions have different sample rates ({fsA} vs {fsB} Hz) — sync calibration needs matching rates.";
+            return;
+        }
+
+        var bufA = new double[CalibrationWindowSamples];
+        var bufB = new double[CalibrationWindowSamples];
+        if (!sessionA.Engine.TryCopyLatestChannel(channelA, bufA) || !sessionB.Engine.TryCopyLatestChannel(channelB, bufB))
+        {
+            SyncStatusText = "Not enough audio yet on one of the sync channels.";
+            return;
+        }
+
+        int fmax = Math.Min(SyncFmaxCap, fsA / 2);
+        // (channel1 = A, channel2 = B) — the live cross-check must reuse this exact argument order,
+        // or OffsetSamples' sign convention silently inverts.
+        DelayEstimate est = GccPhatAnalyzer.Estimate(bufA, bufB, fsA, SyncFmin, fmax);
+        double offsetSamples = Math.Round(est.DelayMs / 1000.0 * fsA);
+
+        _calibration = new SyncCalibration(channelA, channelB, offsetSamples, est.Coherence, DateTime.UtcNow);
+        SyncStatusText = est.Coherence < MinCalibrationCoherence
+            ? $"Low coherence ({est.Coherence:F2}) — clap louder/closer to the touching mics and Recalibrate."
+            : $"Synced: offset {offsetSamples:F0} samples (coherence {est.Coherence:F2}).";
+
+        OnPropertyChanged(nameof(HasCalibration));
+        OnPropertyChanged(nameof(CalibrationSummaryText));
+        OnPropertyChanged(nameof(MeasureSyncButtonText));
+        MeasureSyncCommand.RaiseCanExecuteChanged();
+
+        _crossCheckTimer.Start();
+        UpdateCrossCheck();
+    }
+
+    // Throttled (timer-driven, not per-tick) so it doesn't reintroduce the kind of CPU cost a
+    // 20-40 Hz live GCC-PHAT call would add on top of the cheap trig in Recompute().
+    private void UpdateCrossCheck()
+    {
+        if (_calibration is not SyncCalibration calibration)
+        {
+            CrossCheckText = "Cross-check: calibrate sync first.";
+            CrossCheckBrush = WarnBrush;
+            return;
+        }
+        if (_sessionA is null || _sessionB is null)
+        {
+            CrossCheckText = "Cross-check: needs both sessions.";
+            CrossCheckBrush = WarnBrush;
+            return;
+        }
+        if (SourceXCm is not double sourceXCm || SourceYCm is not double sourceYCm)
+        {
+            CrossCheckText = "Cross-check: needs a live triangulated fix.";
+            CrossCheckBrush = WarnBrush;
+            OnPropertyChanged(nameof(CalibrationSummaryText));
+            return;
+        }
+
+        int fs = _sessionA.Engine.SampleRate;
+        if (fs <= 0)
+        {
+            CrossCheckText = "Cross-check: session A isn't capturing.";
+            CrossCheckBrush = WarnBrush;
+            return;
+        }
+
+        if (!TryGetMappedMicPositionMeters(_sessionA, calibration.ChannelA, out double micAx, out double micAy))
+        {
+            CrossCheckText = "Cross-check: sync channel A isn't a mapped array mic — pick one from Geometry.";
+            CrossCheckBrush = WarnBrush;
+            return;
+        }
+        if (!TryGetMappedMicPositionMeters(_sessionB, calibration.ChannelB, out double micBxLocal, out double micByLocal))
+        {
+            CrossCheckText = "Cross-check: sync channel B isn't a mapped array mic — pick one from Geometry.";
+            CrossCheckBrush = WarnBrush;
+            return;
+        }
+
+        var bufA = new double[SyncWindowSamples];
+        var bufB = new double[SyncWindowSamples];
+        if (!_sessionA.Engine.TryCopyLatestChannel(calibration.ChannelA, bufA)
+            || !_sessionB.Engine.TryCopyLatestChannel(calibration.ChannelB, bufB))
+        {
+            CrossCheckText = "Cross-check: not enough audio on the sync channels.";
+            CrossCheckBrush = WarnBrush;
+            return;
+        }
+
+        int fmax = Math.Min(SyncFmaxCap, fs / 2);
+        // Same (A, B) argument order as MeasureSync() — required for the offset subtraction below
+        // to have consistent sign.
+        DelayEstimate live = GccPhatAnalyzer.Estimate(bufA, bufB, fs, SyncFmin, fmax);
+        double measuredSamples = live.DelayMs / 1000.0 * fs;
+        double correctedSamples = measuredSamples - calibration.OffsetSamples;
+
+        double micBxGlobal = micBxLocal + _offsetXCm / 100.0;
+        double micByGlobal = micByLocal + _offsetYCm / 100.0;
+        double predictedSeconds = NearFieldTdoa.PredictedDelaySeconds(
+            micAx, micAy, micBxGlobal, micByGlobal, sourceXCm / 100.0, sourceYCm / 100.0);
+        double predictedSamples = predictedSeconds * fs;
+
+        double diffSamples = correctedSamples - predictedSamples;
+        CrossCheckBrush = Math.Abs(diffSamples) <= CrossCheckGoodToleranceSamples ? GoodBrush : WarnBrush;
+        CrossCheckText =
+            $"Cross-check: predicted {predictedSamples:F1} samples, measured {correctedSamples:F1} samples, " +
+            $"diff {diffSamples:F1} samples (coherence {live.Coherence:F2}).";
+
+        OnPropertyChanged(nameof(CalibrationSummaryText));
+    }
+
+    private static bool TryGetMappedMicPositionMeters(MainViewModel session, int channel, out double x, out double y)
+    {
+        foreach (MicGeometryViewModel pos in session.MicPositions)
+        {
+            if (pos.Channel == channel)
+            {
+                x = pos.X;
+                y = pos.Y;
+                return true;
+            }
+        }
+        x = 0;
+        y = 0;
+        return false;
+    }
+
+    private void ClearCalibration()
+    {
+        if (_calibration is null)
+        {
+            return;
+        }
+        _calibration = null;
+        _crossCheckTimer.Stop();
+        SyncStatusText = SyncIdleText;
+        CrossCheckText = "Cross-check: calibrate sync first.";
+        CrossCheckBrush = WarnBrush;
+        OnPropertyChanged(nameof(HasCalibration));
+        OnPropertyChanged(nameof(CalibrationSummaryText));
+        OnPropertyChanged(nameof(MeasureSyncButtonText));
+        MeasureSyncCommand.RaiseCanExecuteChanged();
+    }
+
+    private static Brush Freeze(Color color)
+    {
+        var brush = new SolidColorBrush(color);
+        brush.Freeze();
+        return brush;
+    }
+
     public void Dispose()
     {
+        _crossCheckTimer.Stop();
         MainViewModel.OpenSessionsChanged -= OnOpenSessionsChanged;
         Unhook(_sessionA);
         Unhook(_sessionB);

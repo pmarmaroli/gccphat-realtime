@@ -27,7 +27,10 @@ namespace GccPhat.RealTime
 
         private void OnVMChanged(object? sender, PropertyChangedEventArgs e)
         {
-            if (e.PropertyName == nameof(MainViewModel.BeamAzimuthDeg))
+            if (e.PropertyName is nameof(MainViewModel.BeamAzimuthDeg)
+                or nameof(MainViewModel.BeamPolarPattern)
+                or nameof(MainViewModel.PatternFrequencyHz)
+                or nameof(MainViewModel.SelectedBeamformerMode))
             {
                 RedrawAzimuthPreview();
             }
@@ -87,6 +90,12 @@ namespace GccPhat.RealTime
 
             (double centerX, double centerY, double radius) = ArrayGeometryCanvasDrawing.DrawCompass(canvas, width, height, dim);
             double scale = ArrayGeometryCanvasDrawing.ComputeGeometryScale(_viewModel.MicPositions, radius);
+
+            if (_viewModel.BeamPolarPattern is double[] pattern && pattern.Length > 0)
+            {
+                Color accentColor = accent is SolidColorBrush scb ? scb.Color : Colors.Cyan;
+                ArrayGeometryCanvasDrawing.DrawSrpSpectrum(canvas, centerX, centerY, radius, pattern, MainViewModel.BeamPolarPatternStepDeg, accentColor);
+            }
 
             foreach (MicGeometryViewModel pos in _viewModel.MicPositions)
             {

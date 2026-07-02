@@ -29,10 +29,14 @@
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="Auto" />
                                 <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="Auto" />
                             </Grid.ColumnDefinitions>
-                            <Button Grid.Column="0" Content="START" Height="40" MinWidth="96" FontSize="15" Margin="0,0,8,0"
+                            <Button Grid.Column="0" Content="New analysis window &#8599;" Height="40" FontSize="12" Margin="0,0,16,0"
+                                    Click="OnNewWindow"
+                                    ToolTip="Open a second, independent capture/analysis chain for a second microphone array." />
+                            <Button Grid.Column="1" Content="START" Height="40" MinWidth="96" FontSize="15" Margin="0,0,8,0"
                                     Style="{StaticResource AccentButton}" Command="{Binding StartCommand}" />
-                            <Button Grid.Column="1" Content="STOP" Height="40" MinWidth="96" FontSize="15"
+                            <Button Grid.Column="2" Content="STOP" Height="40" MinWidth="96" FontSize="15"
                                     Command="{Binding StopCommand}" />
                         </Grid>
                         <TextBlock VerticalAlignment="Center">
@@ -40,6 +44,24 @@
                             <Run Text="// REALTIME" Foreground="{StaticResource TextDimBrush}" FontFamily="Consolas" FontSize="22" />
                         </TextBlock>
                     </DockPanel>
+
+                    <!-- Activity gate: always visible, drives whether anything downstream runs -->
+                    <Border Style="{StaticResource Card}">
+                        <StackPanel>
+                            <TextBlock Style="{StaticResource SectionHeader}" Text="ACTIVITY GATE" />
+                            <TextBlock Text="Delay, localization, beamforming, and classification all pause while the array is quieter than this."
+                                       Foreground="{StaticResource TextDimBrush}" Margin="0,0,0,8" TextWrapping="Wrap" />
+                            <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                <Slider Width="220" Minimum="-96" Maximum="0" TickFrequency="8" IsSnapToTickEnabled="False"
+                                        Value="{Binding LevelThresholdDb, Mode=TwoWay}" />
+                                <TextBlock Text="{Binding LevelThresholdDb, StringFormat={}{0:F0} dB}" Margin="12,0,0,0"
+                                           VerticalAlignment="Center" FontFamily="Consolas" FontSize="16"
+                                           Foreground="{StaticResource AccentBrush}" />
+                            </StackPanel>
+                            <TextBlock Text="{Binding LevelText}" FontFamily="Consolas" FontSize="13" Foreground="{StaticResource TextDimBrush}" Margin="0,6,0,0" />
+                            <TextBlock Text="{Binding GateStatusText}" FontFamily="Consolas" FontSize="13" Foreground="{StaticResource TextBrush}" Margin="0,2,0,0" />
+                        </StackPanel>
+                    </Border>
 
                     <!-- Device -->
                     <Border Style="{StaticResource Card}">
@@ -141,16 +163,6 @@
                                 </ItemsControl.ItemTemplate>
                             </ItemsControl>
 
-                            <Grid Margin="0,8,0,0">
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="Auto" />
-                                    <ColumnDefinition Width="*" />
-                                </Grid.ColumnDefinitions>
-                                <TextBlock Grid.Column="0" Text="Threshold (dB)" Foreground="{StaticResource TextDimBrush}" VerticalAlignment="Center" />
-                                <TextBox Grid.Column="1" Margin="8,0,0,0" Text="{Binding LevelThresholdDb}" />
-                            </Grid>
-                            <TextBlock Text="{Binding LevelText}" FontFamily="Consolas" FontSize="13" Foreground="{StaticResource TextDimBrush}" Margin="0,4,0,0" />
-
                             </StackPanel>
                         </StackPanel>
                     </Border>
@@ -238,18 +250,41 @@
                     </StackPanel>
                 </Border>
 
-                <Border Style="{StaticResource Card}" Margin="10,0,0,0" Opacity="0.45" IsEnabled="False">
+                <Border Style="{StaticResource Card}" Margin="5,0">
+                    <StackPanel>
+                        <TextBlock Text="CLASSIFICATION" Style="{StaticResource SectionHeader}" />
+                        <TextBlock Text="YAMNet sound-event classifier on one audio channel."
+                                   Foreground="{StaticResource TextDimBrush}" TextWrapping="Wrap" Margin="0,0,0,8" />
+                        <TextBlock Text="Needs: device started, yamnet.onnx in Assets/."
+                                   Foreground="{StaticResource TextDimBrush}" FontSize="12" TextWrapping="Wrap" />
+                        <TextBlock Text="{Binding ClassificationVm.StatusText}"
+                                   Foreground="{StaticResource AccentBrush}" FontSize="12" Margin="0,6,0,12"
+                                   TextWrapping="Wrap" MaxHeight="60" />
+                        <Button Content="Open classification &#8599;" Height="42" Click="OnShowClassification" />
+                    </StackPanel>
+                </Border>
+
+                <Border Style="{StaticResource Card}" Margin="5,0,0,0">
                     <StackPanel>
                         <TextBlock Text="BEAMFORMER" Style="{StaticResource SectionHeader}" />
                         <TextBlock Text="Steer a listening beam to a chosen azimuth and monitor the listening state."
                                    Foreground="{StaticResource TextDimBrush}" TextWrapping="Wrap" Margin="0,0,0,8" />
-                        <TextBlock Text="Temporarily disabled — panel not ready yet."
-                                   Foreground="{StaticResource AccentBrush}" FontSize="12" Margin="0,0,0,8" TextWrapping="Wrap" />
                         <TextBlock Text="{Binding BeamformerToolRequirementsText}"
                                    Foreground="{StaticResource TextDimBrush}" FontSize="12" TextWrapping="Wrap" />
                         <TextBlock Text="{Binding BeamformerToolStatusText}"
                                    Foreground="{StaticResource AccentBrush}" FontSize="12" Margin="0,6,0,12" TextWrapping="Wrap" />
                         <Button Content="Open beamformer &#8599;" Height="42" Click="OnShowBeamformer" />
+                    </StackPanel>
+                </Border>
+
+                <Border Style="{StaticResource Card}" Margin="5,10,5,0">
+                    <StackPanel>
+                        <TextBlock Text="COMBINED LOCALIZATION" Style="{StaticResource SectionHeader}" />
+                        <TextBlock Text="Combines two open analysis windows' azimuths into a 2D (x,y) source fix, given the offset between the two arrays."
+                                   Foreground="{StaticResource TextDimBrush}" TextWrapping="Wrap" Margin="0,0,0,8" />
+                        <TextBlock Text="Needs: two analysis windows open, each started with a live azimuth."
+                                   Foreground="{StaticResource TextDimBrush}" FontSize="12" Margin="0,0,0,12" TextWrapping="Wrap" />
+                        <Button Content="Open combined localization &#8599;" Height="42" Click="OnShowCombinedLocalization" />
                     </StackPanel>
                 </Border>
             </UniformGrid>

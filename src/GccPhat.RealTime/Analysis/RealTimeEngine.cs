@@ -42,13 +42,30 @@ public sealed class RealTimeEngine : IDisposable
     private double[] _micY = Array.Empty<double>();
     private SrpPhatLocalizer? _localizer;
     private double[][] _srpCorr = Array.Empty<double[]>();
+    private int[] _localizerPairIndices = Array.Empty<int>();
+    private bool _hemisphereMode;
+    private const double HemiElStepDeg = 5.0;
 
     public event Action<IReadOnlyList<PairResult>>? ResultsReady;
     public event Action<double[]>? ChannelLevelsReady;
     public event Action<SrpEstimate>? AzimuthReady;
+    public event Action<ClassificationResult[]>? ClassificationReady;
+
+    // YAMNet classification (runs on its own background thread).
+    private YamNetClassifier? _classifier;
+    private int _classChannel;
+    private volatile bool _classRunning;
+    private Thread? _classThread;
+    private const int ClassWindowSeconds = 1; // 1 s input → 16 000 samples at 16 kHz
+    private const int ClassHopMs = 480;       // fire every half-patch
 
     private const int LevelWindow = 2048;
     private readonly double[] _levelScratch = new double[LevelWindow];
+
+    // Activity gate: downstream analysis/beamforming/classification only run while the loudest
+    // channel is at or above this threshold. NegativeInfinity means the gate is always open.
+    private double _levelThresholdDb = double.NegativeInfinity;
+    private volatile bool _levelGateOpen = true;
 
     // Beamforming / listen prototype
     private Beamformer? _beamformer;
@@ -126,23 +143,47 @@ public sealed class RealTimeEngine : IDisposable
     {
         _localizer = null;
         _srpCorr = Array.Empty<double[]>();
-        if (_pairs.Length == 0 || _micX.Length < 2 || _micX.Length != _micY.Length)
+        _localizerPairIndices = Array.Empty<int>();
+        if (_pairs.Length < 2 || _micX.Length < 2 || _micX.Length != _micY.Length)
         {
             return;
         }
-        var srpPairs = new (int a, int b)[_pairs.Length];
+
+        var srpPairs = new List<(int a, int b)>(_pairs.Length);
+        var pairIndices = new List<int>(_pairs.Length);
+        var seenBaselines = new HashSet<(int A, int B)>();
         for (int i = 0; i < _pairs.Length; i++)
         {
             if (_pairs[i].ChannelA >= _micX.Length || _pairs[i].ChannelB >= _micX.Length)
             {
-                return; // pair references a channel without geometry
+                continue;
             }
-            srpPairs[i] = (_pairs[i].ChannelA, _pairs[i].ChannelB);
+
+            if (double.IsNaN(_micX[_pairs[i].ChannelA]) || double.IsNaN(_micY[_pairs[i].ChannelA])
+                || double.IsNaN(_micX[_pairs[i].ChannelB]) || double.IsNaN(_micY[_pairs[i].ChannelB]))
+            {
+                continue;
+            }
+
+            if (!seenBaselines.Add(_pairs[i].UnorderedKey))
+            {
+                continue;
+            }
+
+            srpPairs.Add((_pairs[i].ChannelA, _pairs[i].ChannelB));
+            pairIndices.Add(i);
         }
+
+        if (srpPairs.Count < 2)
+        {
+            return;
+        }
+
         int fs = _capture?.SampleRate ?? 48000;
-        _localizer = new SrpPhatLocalizer(_micX, _micY, srpPairs, fs);
-        _srpCorr = new double[_pairs.Length][];
-        for (int i = 0; i < _pairs.Length; i++)
+        _localizer = new SrpPhatLocalizer(_micX, _micY, srpPairs.ToArray(), fs);
+        _localizerPairIndices = pairIndices.ToArray();
+        _srpCorr = new double[srpPairs.Count][];
+        for (int i = 0; i < srpPairs.Count; i++)
         {
             _srpCorr[i] = new double[_bufferSize];
         }
@@ -173,10 +214,16 @@ public sealed class RealTimeEngine : IDisposable
             _timer = new Timer(OnTick, null, _updateIntervalMs, _updateIntervalMs);
             IsRunning = true;
         }
+
+        bool classifierReady;
+        lock (_gate) { classifierReady = _classifier is { IsAvailable: true }; }
+        if (classifierReady) EnsureClassThreadRunning();
     }
 
     public void Stop()
     {
+        StopClassThread();
+
         lock (_gate)
         {
             IsRunning = false;
@@ -205,16 +252,20 @@ public sealed class RealTimeEngine : IDisposable
 
         try
         {
-            PublishChannelLevels();
+            double[] levels = PublishChannelLevels();
+            _levelGateOpen = IsLevelGateOpen(levels);
 
-            List<PairResult>? results = AnalyzeOnce();
-            if (results is { Count: > 0 })
+            if (_levelGateOpen)
             {
-                ResultsReady?.Invoke(results);
-            }
+                List<PairResult>? results = AnalyzeOnce();
+                if (results is { Count: > 0 })
+                {
+                    ResultsReady?.Invoke(results);
+                }
 
-            // Beamform output runs independently of GCC-PHAT pairs.
-            SynthesizeBeamOutput();
+                // Beamform output runs independently of GCC-PHAT pairs.
+                SynthesizeBeamOutput();
+            }
         }
         catch
         {
@@ -234,6 +285,7 @@ public sealed class RealTimeEngine : IDisposable
         double[] frameA, frameB;
         SrpPhatLocalizer? localizer;
         double[][] srpCorr;
+        int[] localizerPairIndices;
 
         lock (_gate)
         {
@@ -251,18 +303,31 @@ public sealed class RealTimeEngine : IDisposable
             frameB = _frameB;
             localizer = _localizer;
             srpCorr = _srpCorr;
+            localizerPairIndices = _localizerPairIndices;
         }
+
+        bool hemisphereMode;
+        lock (_gate) { hemisphereMode = _hemisphereMode; }
 
         double time = _clock.Elapsed.TotalSeconds;
         var results = new List<PairResult>(pairs.Length);
-        bool srpUsable = localizer is not null && srpCorr.Length == pairs.Length;
+        bool srpUsable = localizer is not null
+                         && srpCorr.Length == localizerPairIndices.Length
+                         && localizerPairIndices.Length >= 2;
+        int srpPairSlot = 0;
 
         for (int i = 0; i < pairs.Length; i++)
         {
             ChannelPair pair = pairs[i];
+            bool pairUsedByLocalizer = srpUsable
+                                       && srpPairSlot < localizerPairIndices.Length
+                                       && localizerPairIndices[srpPairSlot] == i;
             if (pair.ChannelA >= capture.ChannelCount || pair.ChannelB >= capture.ChannelCount)
             {
-                srpUsable = false;
+                if (pairUsedByLocalizer)
+                {
+                    srpUsable = false;
+                }
                 continue;
             }
 
@@ -271,7 +336,10 @@ public sealed class RealTimeEngine : IDisposable
             if (!haveA || !haveB)
             {
                 results.Add(new PairResult(pair, time, 0, 0, 0, 0, 0, 0, 0, Valid: false));
-                srpUsable = false;
+                if (pairUsedByLocalizer)
+                {
+                    srpUsable = false;
+                }
                 continue;
             }
 
@@ -282,15 +350,27 @@ public sealed class RealTimeEngine : IDisposable
                 estimate.LevelA, estimate.LevelB, estimate.Coherence,
                 estimate.ZeroLagCorrelation, estimate.DifferenceRatio, Valid: true));
 
-            if (srpUsable)
+            if (pairUsedByLocalizer)
             {
-                analyzer.CrossCorrelation(frameA, frameB, srpCorr[i]);
+                analyzer.CrossCorrelation(frameA, frameB, srpCorr[srpPairSlot]);
+                srpPairSlot++;
             }
         }
 
-        if (srpUsable && localizer is not null)
+        if (srpUsable && localizer is not null && srpPairSlot == localizerPairIndices.Length)
         {
-            AzimuthReady?.Invoke(localizer.Estimate(srpCorr, bufferSize / 2));
+            var coarsePowers = new double[localizer.CoarseCount];
+            SrpEstimate estimate = localizer.Estimate(srpCorr, bufferSize / 2, coarsePowers);
+
+            if (hemisphereMode)
+            {
+                int nEl = (int)(90.0 / HemiElStepDeg);
+                var hemiPowers = new double[nEl, localizer.CoarseCount];
+                localizer.ScanHemisphere(srpCorr, bufferSize / 2, hemiPowers, HemiElStepDeg);
+                estimate = estimate with { HemispherePowers = hemiPowers, HemiElStepDeg = HemiElStepDeg };
+            }
+
+            AzimuthReady?.Invoke(estimate);
         }
 
         return results;
@@ -427,7 +507,7 @@ public sealed class RealTimeEngine : IDisposable
         _beamAcc = new double[n];
     }
 
-    private void PublishChannelLevels()
+    private double[] PublishChannelLevels()
     {
         MultichannelCapture? capture;
         lock (_gate)
@@ -436,7 +516,7 @@ public sealed class RealTimeEngine : IDisposable
         }
         if (capture is null)
         {
-            return;
+            return Array.Empty<double>();
         }
 
         int channelCount = capture.ChannelCount;
@@ -456,6 +536,35 @@ public sealed class RealTimeEngine : IDisposable
         }
 
         ChannelLevelsReady?.Invoke(levels);
+        return levels;
+    }
+
+    /// <summary>
+    /// Sets the activity gate threshold (dBFS, loudest channel). While the loudest channel is
+    /// below this level, delay estimation, localization, beamforming, and classification are all
+    /// skipped. Pass <see cref="double.NegativeInfinity"/> to always run (gate disabled).
+    /// </summary>
+    public void SetLevelThresholdDb(double thresholdDb) => Volatile.Write(ref _levelThresholdDb, thresholdDb);
+
+    private bool IsLevelGateOpen(double[] levels)
+    {
+        double thresholdDb = Volatile.Read(ref _levelThresholdDb);
+        if (double.IsNegativeInfinity(thresholdDb))
+        {
+            return true;
+        }
+
+        double maxRms = 0.0;
+        for (int i = 0; i < levels.Length; i++)
+        {
+            if (levels[i] > maxRms)
+            {
+                maxRms = levels[i];
+            }
+        }
+
+        double maxDb = maxRms > 1e-7 ? 20.0 * Math.Log10(maxRms) : double.NegativeInfinity;
+        return maxDb >= thresholdDb;
     }
 
     private GccPhatAnalyzer GetAnalyzer(ChannelPair pair, int bufferSize, int fs, int fmin, int fmax)
@@ -553,6 +662,83 @@ public sealed class RealTimeEngine : IDisposable
         }
     }
 
+    public void SetHemisphereMode(bool enabled)
+    {
+        lock (_gate) { _hemisphereMode = enabled; }
+    }
+
+    /// <summary>
+    /// Attach a YAMNet classifier. Pass null to disable. The engine starts/stops its
+    /// classification thread automatically when capture is running.
+    /// </summary>
+    public void SetClassifier(YamNetClassifier? classifier, int channel = 0)
+    {
+        lock (_gate) { _classifier = classifier; _classChannel = channel; }
+        bool shouldRun;
+        lock (_gate) { shouldRun = classifier is { IsAvailable: true } && IsRunning; }
+        if (shouldRun) EnsureClassThreadRunning();
+        else StopClassThread();
+    }
+
+    private void EnsureClassThreadRunning()
+    {
+        if (_classRunning) return;
+        _classRunning = true;
+        _classThread = new Thread(ClassificationLoop)
+        {
+            IsBackground = true,
+            Name = "YAMNet-infer",
+            Priority = ThreadPriority.BelowNormal
+        };
+        _classThread.Start();
+    }
+
+    private void StopClassThread()
+    {
+        _classRunning = false;
+        _classThread = null;
+    }
+
+    private void ClassificationLoop()
+    {
+        while (_classRunning)
+        {
+            Thread.Sleep(ClassHopMs);
+
+            if (!_levelGateOpen) continue;
+
+            YamNetClassifier? classifier;
+            int channel;
+            MultichannelCapture? capture;
+            int sampleRate;
+            lock (_gate)
+            {
+                classifier = _classifier;
+                channel = _classChannel;
+                capture = _capture;
+                sampleRate = _capture?.SampleRate ?? 0;
+            }
+
+            if (classifier is null || !classifier.IsAvailable || capture is null || sampleRate == 0) continue;
+            if (channel >= capture.ChannelCount) continue;
+
+            int windowSamples = sampleRate * ClassWindowSeconds;
+            var scratch = new double[windowSamples];
+            if (!capture.GetChannel(channel).CopyLatest(scratch)) continue;
+
+            try
+            {
+                float[] audio16k = AudioResampler.ResampleTo16kHz(scratch, sampleRate);
+                ClassificationResult[] results = classifier.Classify(audio16k);
+                ClassificationReady?.Invoke(results);
+            }
+            catch
+            {
+                // Never let an inference error crash the classification thread.
+            }
+        }
+    }
+
     public void SetRenderDevice(RenderDeviceInfo? renderDevice)
     {
         lock (_audioGate)
@@ -605,17 +791,13 @@ public sealed class RealTimeEngine : IDisposable
     {
         double[] micX = Volatile.Read(ref _micX);
         double[] micY = Volatile.Read(ref _micY);
-        double theta = _beamAzimuthDeg * Math.PI / 180.0;
-        double ux = Math.Cos(theta);
-        double uy = Math.Sin(theta);
-        const double speed = 343.0; // m/s
         double weight = _beamGain / included.Count;
         for (int i = 0; i < included.Count; i++)
         {
             int channel = included[i];
             double x = channel < micX.Length ? micX[channel] : 0.0;
             double y = channel < micY.Length ? micY[channel] : 0.0;
-            delays[i] = -(x * ux + y * uy) * _capture!.SampleRate / speed;
+            delays[i] = BeamPatternCalculator.SteeringDelaySeconds(x, y, _beamAzimuthDeg) * _capture!.SampleRate;
             weights[i] = weight;
         }
 

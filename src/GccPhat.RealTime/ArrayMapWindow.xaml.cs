@@ -1,6 +1,8 @@
 using System;
+using System.Collections.Generic;
 using System.Collections.Specialized;
 using System.ComponentModel;
+using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
@@ -20,8 +22,11 @@ public partial class ArrayMapWindow : Window
     {
         InitializeComponent();
         _viewModel = viewModel;
+        DataContext = _viewModel;
+        _viewModel.TryAutoApplyDefaultLocalizationPairs();
         _viewModel.PropertyChanged += OnViewModelPropertyChanged;
         _viewModel.MicPositions.CollectionChanged += OnPositionsChanged;
+        _viewModel.ActivePairs.CollectionChanged += OnPositionsChanged;
         Loaded += (_, _) => Redraw();
     }
 
@@ -37,6 +42,9 @@ public partial class ArrayMapWindow : Window
             case nameof(MainViewModel.AzimuthText):
             case nameof(MainViewModel.CurrentLevelDb):
             case nameof(MainViewModel.LevelThresholdDb):
+            case nameof(MainViewModel.CanLocalizeWithCurrentPairs):
+            case nameof(MainViewModel.HasVisibleLocalizationAzimuth):
+            case nameof(MainViewModel.ShowHemisphere):
                 Redraw();
                 break;
         }
@@ -51,7 +59,10 @@ public partial class ArrayMapWindow : Window
 
         double cx = w / 2, cy = h / 2;
         double radius = Math.Min(w, h) / 2 - 50;
-        AzimuthLabel.Text = $"Azimuth: {_viewModel.AzimuthDeg:F1}\u00b0   {_viewModel.LevelText}";
+        string azimuthText = _viewModel.HasVisibleLocalizationAzimuth
+            ? $"{_viewModel.AzimuthDeg:F1}\u00b0"
+            : "--";
+        AzimuthLabel.Text = $"Azimuth: {azimuthText}   {_viewModel.LevelText}";
 
         Brush dim = (Brush)FindResource("TextDimBrush");
         Brush text = (Brush)FindResource("TextBrush");
@@ -59,20 +70,65 @@ public partial class ArrayMapWindow : Window
 
         ArrayGeometryCanvasDrawing.DrawCompass(c, w, h, dim);
 
-        // Gate: only show the array + arrow when the loudest channel is above the threshold.
+        // Mic positions and pair lines are always visible regardless of threshold.
+        double scale = ArrayGeometryCanvasDrawing.ComputeGeometryScale(_viewModel.MicPositions, radius);
+
+        // Build channel→canvas position lookup for drawing pair lines.
+        Dictionary<int, (double X, double Y)> channelScreen = _viewModel.MicPositions
+            .Where(p => p.Channel is int)
+            .ToDictionary(p => p.Channel!.Value, p => (cx + p.X * scale, cy - p.Y * scale));
+
+        // Draw pair lines behind the mic dots.
+        foreach (PairViewModel pair in _viewModel.ActivePairs)
+        {
+            if (channelScreen.TryGetValue(pair.Pair.ChannelA, out var posA) &&
+                channelScreen.TryGetValue(pair.Pair.ChannelB, out var posB))
+            {
+                bool isUsed = pair.LocalizationState == LocalizationPairState.Used;
+                ArrayGeometryCanvasDrawing.DrawPairLine(c, posA.X, posA.Y, posB.X, posB.Y, pair.ColorBrush, isUsed);
+            }
+        }
+
+        // Mic position dots on top.
+        foreach (MicGeometryViewModel pos in _viewModel.MicPositions)
+        {
+            double px = cx + pos.X * scale;
+            double py = cy - pos.Y * scale;
+            ArrayGeometryCanvasDrawing.DrawMicrophone(c, px, py, accent, accent, text, pos.Channel is int ch ? ch.ToString() : "-");
+        }
+
+        // Gate: status text and azimuth arrow only appear above threshold.
         if (!_viewModel.IsAboveThreshold)
         {
             ArrayGeometryCanvasDrawing.AddText(c, "below threshold", cx - 50, cy - 8, dim);
             return;
         }
 
-        // Mic positions, scaled to fit the ring.
-        double scale = ArrayGeometryCanvasDrawing.ComputeGeometryScale(_viewModel.MicPositions, radius);
-        foreach (MicGeometryViewModel pos in _viewModel.MicPositions)
+        if (!_viewModel.CanLocalizeWithCurrentPairs)
         {
-            double px = cx + pos.X * scale;
-            double py = cy - pos.Y * scale; // screen y is down
-            ArrayGeometryCanvasDrawing.DrawMicrophone(c, px, py, accent, accent, text, pos.Channel is int ch ? ch.ToString() : "-");
+            ArrayGeometryCanvasDrawing.AddText(c, "localization waiting", cx - 74, cy - 8, dim);
+            ArrayGeometryCanvasDrawing.DrawCenter(c, cx, cy, text);
+            return;
+        }
+
+        if (!_viewModel.HasVisibleLocalizationAzimuth)
+        {
+            ArrayGeometryCanvasDrawing.AddText(c, "waiting for estimate", cx - 72, cy - 8, dim);
+            ArrayGeometryCanvasDrawing.DrawCenter(c, cx, cy, text);
+            return;
+        }
+
+        Color accentColor = accent is SolidColorBrush scb ? scb.Color : Colors.Cyan;
+
+        // Power visualization: hemisphere heat map (if enabled) or 2D polar spectrum.
+        if (_viewModel.ShowHemisphere && _viewModel.HemispherePowers is double[,] hemi)
+        {
+            ArrayGeometryCanvasDrawing.DrawHemisphereHeatMap(c, cx, cy, radius, hemi,
+                _viewModel.HemiElStepDeg, _viewModel.SrpSpectrumStepDeg, accentColor);
+        }
+        else if (_viewModel.SrpSpectrum is double[] spectrum && spectrum.Length > 0)
+        {
+            ArrayGeometryCanvasDrawing.DrawSrpSpectrum(c, cx, cy, radius, spectrum, _viewModel.SrpSpectrumStepDeg, accentColor);
         }
 
         // Azimuth arrow (0deg = +X, CCW).
@@ -84,6 +140,7 @@ public partial class ArrayMapWindow : Window
     {
         _viewModel.PropertyChanged -= OnViewModelPropertyChanged;
         _viewModel.MicPositions.CollectionChanged -= OnPositionsChanged;
+        _viewModel.ActivePairs.CollectionChanged -= OnPositionsChanged;
         base.OnClosed(e);
     }
 }

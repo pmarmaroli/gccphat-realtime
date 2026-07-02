@@ -1,9 +1,13 @@
 <Window x:Class="GccPhat.RealTime.BeamformerWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:conv="clr-namespace:GccPhat.RealTime.Converters"
         Title="Beamformer" SizeToContent="Height" MinHeight="320" MaxHeight="900" Width="560"
         WindowStartupLocation="CenterOwner"
         Background="{StaticResource BgBrush}" FontFamily="Segoe UI" FontSize="14">
+    <Window.Resources>
+        <conv:LogFrequencySliderConverter x:Key="LogFreqConverter" />
+    </Window.Resources>
     <DockPanel>
         <Border Margin="12" Background="{StaticResource PanelBrush}"
                 BorderBrush="{StaticResource PanelBorderBrush}" BorderThickness="1" CornerRadius="6" Padding="12">
@@ -39,12 +43,27 @@
                         <TextBlock Text="0° = +X axis of the array geometry, counter-clockwise positive."
                                    Foreground="{StaticResource TextDimBrush}" FontSize="12" Margin="0,4,0,0" />
                         <Grid Height="220" Margin="0,12,0,0">
-                            <Canvas x:Name="AzimuthPreviewCanvas" ClipToBounds="True" SizeChanged="OnAzimuthPreviewSizeChanged" />
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="70" />
+                            </Grid.ColumnDefinitions>
+                            <Canvas Grid.Column="0" x:Name="AzimuthPreviewCanvas" ClipToBounds="True" SizeChanged="OnAzimuthPreviewSizeChanged" />
+                            <StackPanel Grid.Column="1" Orientation="Vertical" HorizontalAlignment="Center">
+                                <TextBlock Text="Pattern @" Foreground="{StaticResource TextDimBrush}" FontSize="11"
+                                           HorizontalAlignment="Center" />
+                                <Slider Orientation="Vertical" Height="160" Margin="0,6,0,0"
+                                        Minimum="1.3010" Maximum="3.9031"
+                                        Value="{Binding PatternFrequencyHz, Converter={StaticResource LogFreqConverter}, Mode=TwoWay}" />
+                                <TextBlock Text="{Binding PatternFrequencyText}" Margin="0,6,0,0"
+                                           HorizontalAlignment="Center" FontFamily="Consolas" FontSize="12"
+                                           Foreground="{StaticResource AccentBrush}" />
+                            </StackPanel>
                         </Grid>
-                        <TextBlock Text="Top view of the array. Bright mics feed the beam; dim mics are excluded."
+                        <TextBlock Text="Top view of the array. Bright mics feed the beam; dim mics are excluded. Background fill is the theoretical polar pattern at the chosen frequency."
                                    Foreground="{StaticResource TextDimBrush}" FontSize="12" Margin="0,8,0,0" TextWrapping="Wrap" />
                         <StackPanel Orientation="Horizontal" Margin="0,10,0,0" VerticalAlignment="Center">
-                            <Slider Width="300" Minimum="0" Maximum="360" Value="{Binding BeamAzimuthDeg, Mode=TwoWay}" />
+                            <Slider Width="300" Minimum="0" Maximum="360" TickFrequency="5" IsSnapToTickEnabled="True"
+                                    SmallChange="5" LargeChange="5" Value="{Binding BeamAzimuthDeg, Mode=TwoWay}" />
                             <TextBlock Text="{Binding BeamAzimuthDeg, StringFormat={}{0:F0}°}" Margin="12,0,0,0"
                                        VerticalAlignment="Center" FontFamily="Consolas" FontSize="16"
                                        Foreground="{StaticResource AccentBrush}" />

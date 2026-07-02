@@ -5,6 +5,13 @@ using GccPhat.RealTime.Mvvm;
 
 namespace GccPhat.RealTime.ViewModels;
 
+public enum LocalizationPairState
+{
+    Used,
+    Waiting,
+    Ignored
+}
+
 /// <summary>An active channel pair shown in the list, with its latest live readout.</summary>
 public sealed class PairViewModel : ObservableObject
 {
@@ -26,6 +33,8 @@ public sealed class PairViewModel : ObservableObject
     private double _levelADb = double.NegativeInfinity;
     private double _levelBDb = double.NegativeInfinity;
     private bool _valid;
+    private LocalizationPairState _localizationState = LocalizationPairState.Waiting;
+    private string _localizationStatusText = "Waiting for localization setup.";
 
     public PairViewModel(ChannelPair pair, int paletteIndex)
     {
@@ -39,6 +48,22 @@ public sealed class PairViewModel : ObservableObject
     public int PaletteIndex { get; }
     public Brush ColorBrush { get; }
     public string Label => Pair.ToString();
+    public string LocalizationBadgeText => _localizationState switch
+    {
+        LocalizationPairState.Used => "USED",
+        LocalizationPairState.Waiting => "WAITING",
+        _ => "IGNORED"
+    };
+
+    public Brush LocalizationStatusBrush => _localizationState switch
+    {
+        LocalizationPairState.Used => GoodBrush,
+        LocalizationPairState.Waiting => WeakBrush,
+        _ => MonoBrush
+    };
+
+    public string LocalizationStatusText => _localizationStatusText;
+    public LocalizationPairState LocalizationState => _localizationState;
 
     /// <summary>Updates all live readouts from the latest result (called on the UI thread).</summary>
     public void SetLive(in PairResult result)
@@ -67,6 +92,22 @@ public sealed class PairViewModel : ObservableObject
 
     /// <summary>Clears the live readouts (e.g. when stopped).</summary>
     public void ClearLive() => SetLive(new PairResult(Pair, 0, 0, 0, 0, 0, 0, 0, 0, Valid: false));
+
+    public void SetLocalizationState(LocalizationPairState state, string statusText)
+    {
+        if (_localizationState != state)
+        {
+            _localizationState = state;
+            OnPropertyChanged(nameof(LocalizationBadgeText));
+            OnPropertyChanged(nameof(LocalizationStatusBrush));
+        }
+
+        if (_localizationStatusText != statusText)
+        {
+            _localizationStatusText = statusText;
+            OnPropertyChanged(nameof(LocalizationStatusText));
+        }
+    }
 
     public string DelayText => _valid ? $"{_delayMs,8:F3} ms" : "    --   ms";
     public string CorrText => _valid ? $"r0 {_zeroLag:F4}" : "r0  -- ";

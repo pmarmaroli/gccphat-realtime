@@ -6,7 +6,14 @@
 
   <ItemGroup>
     <PackageReference Include="NAudio" Version="2.2.1" />
+    <PackageReference Include="Microsoft.ML.OnnxRuntime" Version="1.18.0" />
     <PackageReference Include="ScottPlot.WPF" Version="5.0.*" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Model files are not committed — place them in Assets/ after downloading. -->
+    <Content Include="Assets\yamnet.onnx" CopyToOutputDirectory="PreserveNewest" Condition="Exists('Assets\yamnet.onnx')" />
+    <Content Include="Assets\yamnet_class_map.csv" CopyToOutputDirectory="PreserveNewest" Condition="Exists('Assets\yamnet_class_map.csv')" />
   </ItemGroup>
 
   <PropertyGroup>

@@ -27,6 +27,14 @@ watch the inter-microphone delay evolve live as a source moves around the array.
 **Localization**
 
 - SRP‑PHAT far-field azimuth estimator across the active pairs, shown live on a compass-style **array map**.
+- **Polar power spectrum** overlay on the compass: the SRP-PHAT coarse scan power for every azimuth
+  direction is rendered as a filled polar polygon, making directional ambiguities immediately visible.
+- **Hemisphere heat map** (toggle): even for a planar array, the app computes the SRP-PHAT response
+  over the full upper hemisphere (azimuth × elevation) and renders it as a colour-mapped overlay using
+  an azimuthal-equidistant projection (zenith = centre, horizon = edge). Implemented by scaling the
+  existing coarse delay LUT by cos(elevation) — no additional LUT needed.
+- **Array map** always shows mic positions (colour-coded by channel) and the pair lines between them,
+  regardless of the signal threshold. Pairs used for localization are drawn solid; inactive pairs dashed.
 - Mic geometry editor (circular or linear layout, mic count, diameter/spacing, optional center mic)
   mapped to capture channels and shared by the localizer and the beamformer.
 
@@ -42,11 +50,25 @@ watch the inter-microphone delay evolve live as a source moves around the array.
   `[c/(2·aperture), c/(2·min-spacing)]`, the band where the array actually has directivity and does
   not alias (toggleable).
 
+**Classification**
+
+- **YAMNet** 521-class sound event classifier (MobileNet-based, Google AudioSet) running via
+  **ONNX Runtime** on a dedicated background thread — no impact on the DSP pipeline.
+- Feeds a 1-second window from any capture channel, resampled from the device rate to 16 kHz with a
+  windowed-sinc FIR anti-alias filter. Fires every ~480 ms.
+- Displays the **top-10 predicted labels** with confidence scores and horizontal bar indicators.
+- The model is downloaded and converted automatically on first launch via `start.bat`
+  (requires Python; `start.bat` runs `pip install tensorflow tf2onnx` then `tf2onnx.convert`).
+  Subsequent launches skip the setup entirely.
+- Graceful degradation: if the model is absent or Python is unavailable, all other features
+  continue working normally and the classification panel shows setup instructions.
+
 **UI & DSP**
 
 - Configuration lives in the main window; each tool — **Delay View**, **Localization map**,
-  **Beamformer** — opens in its own focused window. Channel pairs are editable from both the Delay
-  View and the Localization map; plot axes from the Delay View; beam mic selection from the Beamformer.
+  **Beamformer**, **Classification** — opens in its own focused window. Channel pairs are editable
+  from both the Delay View and the Localization map; plot axes from the Delay View; beam mic
+  selection from the Beamformer.
 - Thread-safe, allocation-conscious DSP in `GccPhat.Core` (FFT, analyzer, SRP-PHAT, beamformer) with
   xUnit non-regression tests.
 
@@ -57,6 +79,12 @@ watch the inter-microphone delay evolve live as a source moves around the array.
  WasapiCapture(device)   ──►  per-channel ring buffers  ──►  per active pair:           ──►  ScottPlot live chart
  de-interleave float32        (GccPhat.RealTime.Audio)        latest window → GccPhat        per-pair delay readout
                                                               → (delay ms, rms)
+                                                              └─► SRP-PHAT localizer     ──►  array map + compass
+                                                                  → azimuth + spectrum        polar overlay
+                                                                  → hemisphere powers         heat map overlay
+
+[YAMNet thread]  (every 480 ms)
+ ring buffer channel N ──► FIR downsample to 16 kHz ──► ONNX Runtime (yamnet.onnx) ──►  top-10 labels + scores
 ```
 
 When beam listening is enabled, the analysis thread also feeds a weighted-overlap-add beamformer
@@ -69,6 +97,7 @@ The DSP lives in a reusable, dependency-free library, **`GccPhat.Core`**:
 - `GccPhatAnalyzer` — instance-based, allocation-free, **thread-safe-per-instance** estimator.
   One analyzer is created per channel pair, so pairs can be analysed independently/in parallel.
 - `SrpPhatLocalizer` — far-field SRP-PHAT azimuth search over the active pairs and array geometry.
+  Exposes the coarse scan power buffer and a `ScanHemisphere()` method for the 2-D heat map.
 - `Beamformer` — frequency-domain delay-and-sum with fractional steering delays and an optional
   spatial passband (the overlap-add windowing/streaming is driven by the real-time engine).
 
@@ -87,15 +116,40 @@ Same as the original `gccphat` CLI:
 
 ```
 src/
-  GccPhat.Core/         DSP library (FFT + GCC-PHAT analyzer) — no UI/audio dependencies
-  GccPhat.RealTime/     WPF app (WASAPI capture, analysis engine, ScottPlot UI)
+  GccPhat.Core/             DSP library (FFT, GCC-PHAT, SRP-PHAT, beamformer) — no UI/audio deps
+  GccPhat.RealTime/
+    Analysis/               RealTimeEngine, ChannelPair, AudioResampler, YamNetClassifier
+    Audio/                  MultichannelCapture + ChannelRingBuffer (WASAPI, NAudio)
+    ViewModels/             MainViewModel, PairViewModel, ClassificationViewModel, …
+    Assets/                 yamnet.onnx + yamnet_class_map.csv (downloaded by start.bat)
+    ArrayMapWindow          Compass + mic geometry + polar spectrum + hemisphere heat map
+    ClassificationWindow    Top-10 sound event results with score bars
+    BeamformerWindow        Beam steering + channel selection + passband toggle
+    DelayViewWindow         Live ScottPlot delay chart + per-pair readouts
 tests/
-  GccPhat.Core.Tests/   xUnit tests: bit-exact GCC-PHAT vs the gccphat CLI, plus SRP-PHAT localizer
+  GccPhat.Core.Tests/       xUnit tests: bit-exact GCC-PHAT vs the gccphat CLI, plus SRP-PHAT
 ```
 
 ## Build & run
 
 Requirements: **.NET 8 SDK** (or newer) on **Windows** (WASAPI capture is Windows-only).
+
+### Quickstart (double-click)
+
+```
+start.bat
+```
+
+The script will:
+1. Kill any running instance of the app.
+2. Download and convert the YAMNet ONNX model on first launch (requires Python 3.9+;
+   subsequent launches skip this step).
+3. Build the project in Release mode (`dotnet build`).
+4. Launch `GccPhat.RealTime.exe`.
+
+The console window stays open so you can read any error messages.
+
+### Manual build
 
 ```bash
 git clone https://github.com/pmarmaroli/gccphat-realtime.git
@@ -113,6 +167,17 @@ dotnet run --project src/GccPhat.RealTime/GccPhat.RealTime.csproj -c Release
 ```bash
 dotnet publish src/GccPhat.RealTime/GccPhat.RealTime.csproj -c Release -r win-x64 ^
     --self-contained true -p:PublishSingleFile=true -o publish
+```
+
+### YAMNet model (manual setup)
+
+If Python is not available, set up the model manually and place both files in the
+`Assets/` folder next to the executable:
+
+```bash
+pip install tensorflow tensorflow-hub tf2onnx
+python -c "import tensorflow_hub as hub, tensorflow as tf, tf2onnx; m=hub.load('https://tfhub.dev/google/yamnet/1'); sig=[tf.TensorSpec([None],tf.float32,'waveform')]; cf=tf.function(lambda w:m(w)[0],input_signature=sig).get_concrete_function(); tf2onnx.convert.from_function(cf,input_signature=sig,opset=13,output_path='yamnet.onnx')"
+curl -o yamnet_class_map.csv https://raw.githubusercontent.com/tensorflow/models/master/research/audioset/yamnet/yamnet_class_map.csv
 ```
 
 ## Choosing the analysis window
@@ -144,6 +209,8 @@ time resolution of the live plot. See the
   [pmarmaroli/gccphat](https://github.com/pmarmaroli/gccphat).
 - In-place complex FFT after Gerald T. Beauregard (MIT License).
 - Plotting by [ScottPlot](https://scottplot.net); audio I/O by [NAudio](https://github.com/naudio/NAudio).
+- Sound event classification by [YAMNet](https://tfhub.dev/google/yamnet/1) (Google, Apache 2.0),
+  served via [ONNX Runtime](https://onnxruntime.ai) for .NET.
 
 ## License
 

@@ -4,6 +4,8 @@ using System.Collections.Specialized;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Linq;
+using System.Threading.Tasks;
+using System.Windows.Threading;
 using GccPhat.Core;
 using GccPhat.RealTime.Analysis;
 using GccPhat.RealTime.Audio;
@@ -13,11 +15,22 @@ namespace GccPhat.RealTime.ViewModels;
 
 public sealed class MainViewModel : ObservableObject
 {
+    // Cross-window bookkeeping: which capture device (by Id) each open analysis window has
+    // claimed, so a newly opened window's device list excludes devices already in use elsewhere.
+    private static readonly Dictionary<string, MainViewModel> s_claimedDevices = new();
+
+    // Registry of all currently open analysis windows, so a combined-localization window can
+    // discover and pick from them.
+    private static readonly List<MainViewModel> s_openSessions = new();
+    public static IReadOnlyList<MainViewModel> OpenSessions => s_openSessions;
+    public static event Action? OpenSessionsChanged;
+
+    private string? _claimedDeviceId;
     private AudioDeviceInfo? _selectedDevice;
     private RenderDeviceInfo? _selectedRenderDevice;
     private int? _selectedChannelA;
     private int? _selectedChannelB;
-    private int _selectedBufferSize = 4096;
+    private int _selectedBufferSize = 8192;
     private int _fmin = 200;
     private int _fmax = 8000;
     private int _updateIntervalMs = 50;
@@ -34,10 +47,12 @@ public sealed class MainViewModel : ObservableObject
     private int _micCount = 6;
     private double _diameterCm = 8;
     private double _spacingCm = 5;
-    private bool _hasCenterMic;
+    private bool _hasCenterMic = true;
     private string _azimuthText = "Azimuth: --";
-    private double _levelThresholdDb = -35;
+    private double _levelThresholdDb = -70;
+    private bool _localizationPairsAutoApplied;
     private double _currentLevelDb = double.NegativeInfinity;
+    private bool _hasLiveAzimuth;
 
     public MainViewModel()
     {
@@ -46,6 +61,9 @@ public sealed class MainViewModel : ObservableObject
         RefreshDevicesCommand = new RelayCommand(RefreshDevices);
         AddPairCommand = new RelayCommand(AddPair, CanAddPair);
         RemoveSelectedPairCommand = new RelayCommand(RemoveSelectedPair, () => _selectedPair is not null);
+        AddOppositePairsCommand = new RelayCommand(AddOppositePairs);
+        AddConsecutivePairsCommand = new RelayCommand(AddConsecutivePairs);
+        AddAllPairsCommand = new RelayCommand(AddAllPairs);
         StartCommand = new RelayCommand(Start, () => !IsRunning && SelectedDevice is not null);
         StopCommand = new RelayCommand(Stop, () => IsRunning);
         ListenCommand = new RelayCommand(() => BeamListening = !BeamListening, () => IsRunning);
@@ -56,7 +74,29 @@ public sealed class MainViewModel : ObservableObject
         RefreshDevices();
         RebuildPositions();
         Engine.SetBeamformingMode(ParseBeamformerMode(_selectedBeamformerMode));
+        Engine.SetLevelThresholdDb(_levelThresholdDb);
         NotifyToolStateChanged();
+
+        // Loads the YAMNet ONNX model off the UI thread: model loading can take several seconds, and
+        // since every open analysis window shares one WPF UI thread, loading it synchronously here
+        // would freeze ALL open windows for that duration every time a new one is opened.
+        ClassificationVm.StatusText = "Loading YAMNet…";
+        Dispatcher uiDispatcher = Dispatcher.CurrentDispatcher;
+        Task.Run(() =>
+        {
+            Classifier.Load();
+            uiDispatcher.Invoke(() =>
+            {
+                ClassificationVm.StatusText = Classifier.StatusText;
+                if (Classifier.IsAvailable)
+                {
+                    Engine.SetClassifier(Classifier, _classificationChannel);
+                }
+            });
+        });
+
+        s_openSessions.Add(this);
+        OpenSessionsChanged?.Invoke();
     }
 
     public RealTimeEngine Engine { get; }
@@ -109,11 +149,24 @@ public sealed class MainViewModel : ObservableObject
         private set => SetProperty(ref _azimuthText, value);
     }
 
-    /// <summary>Gate: the array only appears on the compass when the level is above this (dBFS).</summary>
+    /// <summary>
+    /// Activity gate (dBFS, loudest channel): delay estimation, localization, beamforming, and
+    /// classification all pause while the loudest channel is below this level.
+    /// </summary>
     public double LevelThresholdDb
     {
         get => _levelThresholdDb;
-        set { if (SetProperty(ref _levelThresholdDb, value)) OnPropertyChanged(nameof(IsAboveThreshold)); }
+        set
+        {
+            if (SetProperty(ref _levelThresholdDb, value))
+            {
+                _hasLiveAzimuth = false;
+                Engine.SetLevelThresholdDb(value);
+                OnPropertyChanged(nameof(IsAboveThreshold));
+                OnPropertyChanged(nameof(HasVisibleLocalizationAzimuth));
+                OnPropertyChanged(nameof(GateStatusText));
+            }
+        }
     }
 
     /// <summary>Loudest channel level (dBFS) of the latest frame; drives the compass gate.</summary>
@@ -124,11 +177,20 @@ public sealed class MainViewModel : ObservableObject
         {
             if (SetProperty(ref _currentLevelDb, value))
             {
+                if (_currentLevelDb < _levelThresholdDb)
+                {
+                    _hasLiveAzimuth = false;
+                }
                 OnPropertyChanged(nameof(LevelText));
                 OnPropertyChanged(nameof(IsAboveThreshold));
+                OnPropertyChanged(nameof(HasVisibleLocalizationAzimuth));
+                OnPropertyChanged(nameof(GateStatusText));
             }
         }
     }
+
+    /// <summary>Human-readable state of the activity gate, for display next to the threshold slider.</summary>
+    public string GateStatusText => IsAboveThreshold ? "● Gate open — processing" : "○ Gate closed — waiting for sound";
 
     public string SelectedBeamformerMode
     {
@@ -141,6 +203,7 @@ public sealed class MainViewModel : ObservableObject
                 OnPropertyChanged(nameof(BeamModeDescriptionText));
                 OnPropertyChanged(nameof(BeamModeStatusText));
                 OnPropertyChanged(nameof(BeamProcessingText));
+                UpdateBeamPattern();
             }
         }
     }
@@ -229,7 +292,7 @@ public sealed class MainViewModel : ObservableObject
                 ? "Ready now."
                 : "Ready after you press START.";
 
-    public string LocalizationToolRequirementsText => "Needs: geometry mapped to unique capture channels, at least 2 channel pairs, then START.";
+    public string LocalizationToolRequirementsText => "Needs: geometry mapped to unique capture channels, at least 2 mapped channel pairs, then START.";
 
     public string LocalizationToolStatusText
     {
@@ -240,14 +303,88 @@ public sealed class MainViewModel : ObservableObject
                 return $"Missing: {GeometryIssueText}.";
             }
 
-            if (ActivePairs.Count < 2)
+            int eligiblePairs = GetEligibleLocalizationPairCount();
+            if (eligiblePairs < 2)
             {
-                return ActivePairs.Count == 1
-                    ? "Missing: add 1 more channel pair."
-                    : "Missing: add at least 2 channel pairs.";
+                return eligiblePairs == 1
+                    ? "Missing: add 1 more mapped channel pair."
+                    : "Missing: add at least 2 mapped channel pairs.";
             }
 
             return IsRunning ? "Ready now." : "Ready after you press START.";
+        }
+    }
+
+    public bool CanLocalizeWithCurrentPairs => HasValidSpatialGeometry && GetEligibleLocalizationPairCount() >= 2;
+    public bool HasVisibleLocalizationAzimuth => IsRunning && IsAboveThreshold && CanLocalizeWithCurrentPairs && _hasLiveAzimuth;
+
+    /// <summary>True while the currently configured pairs are exactly the ones <see cref="TryAutoApplyDefaultLocalizationPairs"/> seeded — cleared as soon as the user adds/removes a pair.</summary>
+    public bool LocalizationPairsAutoApplied
+    {
+        get => _localizationPairsAutoApplied;
+        private set => SetProperty(ref _localizationPairsAutoApplied, value);
+    }
+
+    /// <summary>
+    /// Called when the array map ("Localization") window opens: if no channel pairs are configured
+    /// yet, seeds them with the opposite-pair preset so localization works without any manual setup.
+    /// Never overrides pairs the user has already configured.
+    /// </summary>
+    public void TryAutoApplyDefaultLocalizationPairs()
+    {
+        if (ActivePairs.Count > 0)
+        {
+            return;
+        }
+
+        AddOppositePairs();
+        if (ActivePairs.Count > 0)
+        {
+            LocalizationPairsAutoApplied = true;
+        }
+    }
+
+    public string LocalizationPairSummaryText
+    {
+        get
+        {
+            int totalPairs = ActivePairs.Count;
+            if (totalPairs == 0)
+            {
+                return "No channel pairs configured yet.";
+            }
+
+            int eligiblePairs = GetEligibleLocalizationPairCount();
+            int usedPairs = GetUsedLocalizationPairCount(eligiblePairs);
+            return $"{usedPairs} of {totalPairs} pair{Pluralize(totalPairs)} currently used for SRP-PHAT.";
+        }
+    }
+
+    public string LocalizationPairHintText
+    {
+        get
+        {
+            if (ActivePairs.Count == 0)
+            {
+                return "Add at least 2 mapped pairs to start localization.";
+            }
+
+            int eligiblePairs = GetEligibleLocalizationPairCount();
+            if (!HasValidSpatialGeometry)
+            {
+                return $"Finish geometry setup first: {GeometryIssueText}.";
+            }
+
+            if (eligiblePairs < 2)
+            {
+                int missingPairs = 2 - eligiblePairs;
+                return $"SRP-PHAT starts when at least 2 pairs are ready ({missingPairs} more needed).";
+            }
+
+            int ignoredPairs = ActivePairs.Count - eligiblePairs;
+            return ignoredPairs == 0
+                ? "All configured pairs are being used."
+                : $"{ignoredPairs} pair{Pluralize(ignoredPairs)} are ignored until both channels are mapped in Geometry.";
         }
     }
 
@@ -282,6 +419,9 @@ public sealed class MainViewModel : ObservableObject
     public RelayCommand RefreshDevicesCommand { get; }
     public RelayCommand AddPairCommand { get; }
     public RelayCommand RemoveSelectedPairCommand { get; }
+    public RelayCommand AddOppositePairsCommand { get; }
+    public RelayCommand AddConsecutivePairsCommand { get; }
+    public RelayCommand AddAllPairsCommand { get; }
     public RelayCommand StartCommand { get; }
     public RelayCommand StopCommand { get; }
     public RelayCommand ListenCommand { get; }
@@ -293,12 +433,17 @@ public sealed class MainViewModel : ObservableObject
         {
             if (SetProperty(ref _selectedDevice, value))
             {
+                UpdateDeviceClaim();
                 RebuildChannelList();
                 OnPropertyChanged(nameof(BeamProcessingText));
+                OnPropertyChanged(nameof(SessionLabel));
                 RaiseCommandStates();
             }
         }
     }
+
+    /// <summary>Human-readable label for this session, used by the combined-localization window's session pickers.</summary>
+    public string SessionLabel => SelectedDevice?.Name ?? "(no device selected)";
 
     public RenderDeviceInfo? SelectedRenderDevice
     {
@@ -411,6 +556,7 @@ public sealed class MainViewModel : ObservableObject
             {
                 OnPropertyChanged(nameof(CanEditConfig));
                 OnPropertyChanged(nameof(BeamWorkflowText));
+                OnPropertyChanged(nameof(HasVisibleLocalizationAzimuth));
                 RaiseCommandStates();
             }
         }
@@ -437,8 +583,14 @@ public sealed class MainViewModel : ObservableObject
             string? previousId = SelectedDevice?.Id;
             string? previousRenderId = SelectedRenderDevice?.Id;
             Devices.Clear();
+            int hiddenCount = 0;
             foreach (AudioDeviceInfo device in DeviceEnumerator.ListCaptureDevices())
             {
+                if (s_claimedDevices.TryGetValue(device.Id, out MainViewModel? owner) && owner != this)
+                {
+                    hiddenCount++;
+                    continue; // already selected in another open analysis window
+                }
                 Devices.Add(device);
             }
             SelectedDevice = Devices.FirstOrDefault(d => d.Id == previousId) ?? Devices.FirstOrDefault();
@@ -454,13 +606,50 @@ public sealed class MainViewModel : ObservableObject
                 ?? RenderDevices.FirstOrDefault(d => d.Id == defaultRenderId)
                 ?? RenderDevices.FirstOrDefault();
 
-            StatusText = $"Found {Devices.Count} capture device(s) and {RenderDevices.Count} render device(s).";
+            StatusText = $"Found {Devices.Count} capture device(s) and {RenderDevices.Count} render device(s)."
+                       + (hiddenCount > 0 ? $" ({hiddenCount} hidden — already selected in another window.)" : string.Empty);
             NotifyToolStateChanged();
         }
         catch (Exception ex)
         {
             StatusText = $"Device enumeration failed: {ex.Message}";
         }
+    }
+
+    // Keeps s_claimedDevices in sync with this instance's current selection (by device Id, not
+    // object reference, since RefreshDevices() re-enumerates fresh AudioDeviceInfo instances).
+    private void UpdateDeviceClaim()
+    {
+        string? newId = _selectedDevice?.Id;
+        if (newId == _claimedDeviceId)
+        {
+            return;
+        }
+
+        ReleaseDeviceClaim();
+        _claimedDeviceId = newId;
+        if (newId is not null)
+        {
+            s_claimedDevices[newId] = this;
+        }
+    }
+
+    /// <summary>Releases this window's device claim (call when its window closes).</summary>
+    public void ReleaseDeviceClaim()
+    {
+        if (_claimedDeviceId is not null)
+        {
+            s_claimedDevices.Remove(_claimedDeviceId);
+            _claimedDeviceId = null;
+        }
+    }
+
+    /// <summary>Call when this session's window closes: releases its device claim and drops it from the open-session registry.</summary>
+    public void Shutdown()
+    {
+        ReleaseDeviceClaim();
+        s_openSessions.Remove(this);
+        OpenSessionsChanged?.Invoke();
     }
 
     private void RebuildChannelList()
@@ -481,7 +670,8 @@ public sealed class MainViewModel : ObservableObject
     private bool CanAddPair()
         => SelectedChannelA is int a
            && SelectedChannelB is int b
-           && a != b;
+           && a != b
+           && !ActivePairs.Any(p => p.Pair.UnorderedKey == new ChannelPair(a, b).UnorderedKey);
 
     private void AddPair()
     {
@@ -491,7 +681,7 @@ public sealed class MainViewModel : ObservableObject
         }
 
         var pair = new ChannelPair(a, b);
-        if (ActivePairs.Any(p => p.Pair == pair))
+        if (ActivePairs.Any(p => p.Pair.UnorderedKey == pair.UnorderedKey))
         {
             StatusText = $"Pair {pair} already added.";
             return;
@@ -510,19 +700,147 @@ public sealed class MainViewModel : ObservableObject
             return;
         }
         ActivePairs.Remove(_selectedPair);
-        // Reindex palette so colours stay contiguous.
+        ReindexActivePairs();
+        SelectedPair = null;
+        SyncEnginePairs();
+        RaiseCommandStates();
+    }
+
+    // Reindexes ActivePairs so palette colours stay contiguous after any removal.
+    private void ReindexActivePairs()
+    {
         var snapshot = ActivePairs.ToList();
         ActivePairs.Clear();
         for (int i = 0; i < snapshot.Count; i++)
         {
             ActivePairs.Add(new PairViewModel(snapshot[i].Pair, i));
         }
+    }
+
+    private void SyncEnginePairs() => Engine.SetPairs(ActivePairs.Select(p => p.Pair));
+
+    /// <summary>Toggles one pair per diametrically opposite ring microphone (circular layout, even mic count).</summary>
+    private void AddOppositePairs()
+    {
+        if (!IsCircular || _micCount % 2 != 0)
+        {
+            StatusText = "Opposite pairs need a circular layout with an even mic count.";
+            return;
+        }
+
+        var byPosition = MicPositions
+            .Where(p => p.PositionIndex < _micCount)
+            .ToDictionary(p => p.PositionIndex);
+        int half = _micCount / 2;
+        var pairs = new List<(int A, int B)>(half);
+        for (int i = 0; i < half; i++)
+        {
+            if (byPosition.TryGetValue(i, out MicGeometryViewModel? a) && byPosition.TryGetValue(i + half, out MicGeometryViewModel? b)
+                && a.Channel is int ca && b.Channel is int cb)
+            {
+                pairs.Add((ca, cb));
+            }
+        }
+        ToggleQuickAddPairs(pairs, "opposite");
+    }
+
+    /// <summary>Toggles a pair between each microphone and its immediate neighbor (ring wraps for circular).</summary>
+    private void AddConsecutivePairs()
+    {
+        var ring = MicPositions.Where(p => p.PositionIndex < _micCount).ToDictionary(p => p.PositionIndex);
+        int n = ring.Count;
+        int steps = IsCircular ? n : n - 1;
+        var pairs = new List<(int A, int B)>(steps);
+        for (int i = 0; i < steps; i++)
+        {
+            int j = (i + 1) % n;
+            if (ring.TryGetValue(i, out MicGeometryViewModel? a) && ring.TryGetValue(j, out MicGeometryViewModel? b)
+                && a.Channel is int ca && b.Channel is int cb)
+            {
+                pairs.Add((ca, cb));
+            }
+        }
+        ToggleQuickAddPairs(pairs, "consecutive");
+    }
+
+    /// <summary>Toggles every possible pair among the currently assigned microphones (center mic included).</summary>
+    private void AddAllPairs()
+    {
+        var channels = MicPositions.Where(p => p.Channel is int).Select(p => p.Channel!.Value).Distinct().ToList();
+        var pairs = new List<(int A, int B)>(channels.Count * (channels.Count - 1) / 2);
+        for (int i = 0; i < channels.Count; i++)
+        {
+            for (int j = i + 1; j < channels.Count; j++)
+            {
+                pairs.Add((channels[i], channels[j]));
+            }
+        }
+        ToggleQuickAddPairs(pairs, "possible");
+    }
+
+    /// <summary>
+    /// If every one of the given channel pairs is already active, removes them all (deselect).
+    /// Otherwise adds whichever ones are missing (select).
+    /// </summary>
+    private void ToggleQuickAddPairs(List<(int A, int B)> channelPairs, string kindLabel)
+    {
+        List<(int A, int B)> keys = channelPairs
+            .Where(p => p.A != p.B)
+            .Select(p => new ChannelPair(p.A, p.B).UnorderedKey)
+            .Distinct()
+            .ToList();
+
+        if (keys.Count == 0)
+        {
+            StatusText = $"No {kindLabel} pairs available (assign mic channels first).";
+            return;
+        }
+
+        bool allPresent = keys.All(key => ActivePairs.Any(p => p.Pair.UnorderedKey == key));
+        if (allPresent)
+        {
+            RemovePairsByKeys(keys);
+            StatusText = $"Removed {keys.Count} {kindLabel} pair{Pluralize(keys.Count)}.";
+            return;
+        }
+
+        int added = 0;
+        foreach ((int a, int b) in channelPairs)
+        {
+            if (a == b)
+            {
+                continue;
+            }
+            var pair = new ChannelPair(a, b);
+            if (ActivePairs.Any(p => p.Pair.UnorderedKey == pair.UnorderedKey))
+            {
+                continue;
+            }
+            ActivePairs.Add(new PairViewModel(pair, ActivePairs.Count));
+            added++;
+        }
+
+        SyncEnginePairs();
+        RaiseCommandStates();
+        StatusText = $"Added {added} {kindLabel} pair{Pluralize(added)}.";
+    }
+
+    private void RemovePairsByKeys(List<(int A, int B)> keys)
+    {
+        var toRemove = ActivePairs.Where(p => keys.Contains(p.Pair.UnorderedKey)).ToList();
+        if (toRemove.Count == 0)
+        {
+            return;
+        }
+        foreach (PairViewModel vm in toRemove)
+        {
+            ActivePairs.Remove(vm);
+        }
+        ReindexActivePairs();
         SelectedPair = null;
         SyncEnginePairs();
         RaiseCommandStates();
     }
-
-    private void SyncEnginePairs() => Engine.SetPairs(ActivePairs.Select(p => p.Pair));
 
     // Recomputes mic positions (metres) from the selected array layout and its parameters.
     private void RebuildPositions()
@@ -554,19 +872,27 @@ public sealed class MainViewModel : ObservableObject
         }
         AttachGeometryPositionHandlers();
         UpdateBeamBand();
+        UpdateBeamPattern();
         NotifyToolStateChanged();
     }
 
     // Builds per-channel geometry arrays (metres) from the channel→position assignments.
     private void SyncEngineGeometry()
     {
+        if (!HasValidSpatialGeometry)
+        {
+            Engine.SetGeometry(Array.Empty<double>(), Array.Empty<double>());
+            return;
+        }
+
         int maxChannel = MicPositions.Where(p => p.Channel is int).Select(p => p.Channel!.Value).DefaultIfEmpty(-1).Max();
         if (maxChannel < 0)
         {
+            Engine.SetGeometry(Array.Empty<double>(), Array.Empty<double>());
             return;
         }
-        var x = new double[maxChannel + 1];
-        var y = new double[maxChannel + 1];
+        var x = Enumerable.Repeat(double.NaN, maxChannel + 1).ToArray();
+        var y = Enumerable.Repeat(double.NaN, maxChannel + 1).ToArray();
         foreach (MicGeometryViewModel pos in MicPositions)
         {
             if (pos.Channel is int ch)
@@ -646,6 +972,54 @@ public sealed class MainViewModel : ObservableObject
         BeamBandText = $"Useful band: {fLow:F0}–{fHigh:F0} Hz  (aperture {dMax * 100:F1} cm, min spacing {dMin * 100:F1} cm)";
     }
 
+    /// <summary>
+    /// Recomputes the theoretical polar response (dB) of the current beam design at
+    /// <see cref="PatternFrequencyHz"/>, for display alongside the azimuth preview.
+    /// </summary>
+    private void UpdateBeamPattern()
+    {
+        var selected = MicPositions
+            .Where(p => p.Channel is int && p.IncludeInBeam)
+            .ToList();
+        if (selected.Count == 0)
+        {
+            BeamPolarPattern = null;
+            OnPropertyChanged(nameof(BeamPolarPattern));
+            return;
+        }
+
+        var x = selected.Select(p => p.X).ToArray();
+        var y = selected.Select(p => p.Y).ToArray();
+        var delays = new double[selected.Count];
+        var weights = new double[selected.Count];
+
+        if (ParseBeamformerMode(_selectedBeamformerMode) == BeamformerMode.DifferentialAuto)
+        {
+            if (!DifferentialBeamformerDesigner.TryBuildWeights(x, y, BeamAzimuthDeg, weights, out _))
+            {
+                BeamPolarPattern = null;
+                OnPropertyChanged(nameof(BeamPolarPattern));
+                return;
+            }
+            // delays stay zero — the differential design steers purely through weights.
+        }
+        else
+        {
+            for (int i = 0; i < selected.Count; i++)
+            {
+                delays[i] = BeamPatternCalculator.SteeringDelaySeconds(x[i], y[i], BeamAzimuthDeg);
+                weights[i] = 1.0 / selected.Count;
+            }
+        }
+
+        double[] magnitude = BeamPatternCalculator.ComputeArrayFactor(x, y, delays, weights, PatternFrequencyHz, BeamPolarPatternStepDeg);
+        const double floorDb = -120.0;
+        BeamPolarPattern = magnitude
+            .Select(m => Math.Max(20.0 * Math.Log10(Math.Max(m, 1e-6)), floorDb))
+            .ToArray();
+        OnPropertyChanged(nameof(BeamPolarPattern));
+    }
+
     private double _azimuthDeg;
     private bool _beamListening;
     private double _beamAzimuthDeg;
@@ -653,6 +1027,13 @@ public sealed class MainViewModel : ObservableObject
     private bool _beamBandLimit = true;
     private string _beamBandText = "Full band.";
     private string _selectedBeamformerMode = BeamformerModeDelayAndSum;
+    private double _patternFrequencyHz = 1000.0;
+
+    /// <summary>Assumed sample rate (Hz) used only to bound the pattern-frequency slider, for now.</summary>
+    public const double PatternAssumedSampleRateHz = 16000.0;
+    public const double PatternMinFrequencyHz = 20.0;
+    public const double PatternMaxFrequencyHz = PatternAssumedSampleRateHz / 2.0;
+    public const double BeamPolarPatternStepDeg = 2.0;
 
     private const string BeamformerModeDelayAndSum = "Delay-and-sum";
     private const string BeamformerModeDifferentialAuto = "Differential (auto order)";
@@ -706,6 +1087,7 @@ public sealed class MainViewModel : ObservableObject
             {
                 Engine.SetBeamformingAzimuth(_beamAzimuthDeg);
                 OnPropertyChanged(nameof(BeamModeStatusText));
+                UpdateBeamPattern();
             }
         }
     }
@@ -745,11 +1127,79 @@ public sealed class MainViewModel : ObservableObject
         private set => SetProperty(ref _beamBandText, value);
     }
 
+    /// <summary>
+    /// Frequency (Hz) at which the theoretical polar pattern is evaluated. Range is bounded by
+    /// <see cref="PatternMinFrequencyHz"/>/<see cref="PatternMaxFrequencyHz"/> (Nyquist for the
+    /// assumed 16 kHz sample rate, for now).
+    /// </summary>
+    public double PatternFrequencyHz
+    {
+        get => _patternFrequencyHz;
+        set
+        {
+            double clamped = Math.Clamp(value, PatternMinFrequencyHz, PatternMaxFrequencyHz);
+            if (SetProperty(ref _patternFrequencyHz, clamped))
+            {
+                OnPropertyChanged(nameof(PatternFrequencyText));
+                UpdateBeamPattern();
+            }
+        }
+    }
+
+    public string PatternFrequencyText => $"{PatternFrequencyHz:F0} Hz";
+
+    /// <summary>Theoretical polar response (dB, floor-clamped) of the current beam design at <see cref="PatternFrequencyHz"/>; null when no mics are selected.</summary>
+    public double[]? BeamPolarPattern { get; private set; }
+
+    // ── Classification ──────────────────────────────────────────────────────────
+    public YamNetClassifier Classifier { get; } = new();
+    public ClassificationViewModel ClassificationVm { get; } = new();
+
+    private int _classificationChannel;
+    public int ClassificationChannel
+    {
+        get => _classificationChannel;
+        set
+        {
+            if (SetProperty(ref _classificationChannel, value))
+                Engine.SetClassifier(Classifier, value);
+        }
+    }
+
+    public void UpdateClassification(ClassificationResult[] results)
+        => ClassificationVm.UpdateResults(results, _classificationChannel);
+
+    // ── SRP-PHAT spectrum ───────────────────────────────────────────────────────
+    public double[]? SrpSpectrum { get; private set; }
+    public double SrpSpectrumStepDeg { get; private set; }
+    public double[,]? HemispherePowers { get; private set; }
+    public double HemiElStepDeg { get; private set; }
+
+    private bool _showHemisphere;
+    public bool ShowHemisphere
+    {
+        get => _showHemisphere;
+        set
+        {
+            if (SetProperty(ref _showHemisphere, value))
+            {
+                Engine.SetHemisphereMode(value);
+                if (!value) HemispherePowers = null;
+            }
+        }
+    }
+
     /// <summary>Called on the UI thread with the latest SRP-PHAT azimuth over the active pairs.</summary>
     public void UpdateAzimuth(SrpEstimate estimate)
     {
         AzimuthDeg = estimate.AzimuthDeg;
         AzimuthText = $"Source azimuth: {estimate.AzimuthDeg,6:F1}\u00b0";
+        SrpSpectrum = estimate.CoarsePowers;
+        SrpSpectrumStepDeg = estimate.CoarseStepDeg;
+        HemispherePowers = estimate.HemispherePowers;
+        HemiElStepDeg = estimate.HemiElStepDeg;
+        _hasLiveAzimuth = true;
+        OnPropertyChanged(nameof(HasVisibleLocalizationAzimuth));
     }
 
     private void Start()
@@ -807,6 +1257,10 @@ public sealed class MainViewModel : ObservableObject
         DetectedChannelText = "Start, then blow on a microphone to identify its channel.";
         AzimuthText = "Azimuth: --";
         CurrentLevelDb = double.NegativeInfinity;
+        SrpSpectrum = null;
+        HemispherePowers = null;
+        _hasLiveAzimuth = false;
+        OnPropertyChanged(nameof(HasVisibleLocalizationAzimuth));
         StatusText = "Stopped.";
     }
 
@@ -915,7 +1369,120 @@ public sealed class MainViewModel : ObservableObject
         }
     }
 
-    private void OnActivePairsChanged(object? sender, NotifyCollectionChangedEventArgs e) => NotifyToolStateChanged();
+    private void RefreshLocalizationPairStates()
+    {
+        HashSet<int> availableChannels = AvailableChannels.ToHashSet();
+        HashSet<int> mappedChannels = GetMappedGeometryChannels(availableChannels);
+        int eligiblePairs = GetEligibleLocalizationPairCount(availableChannels, mappedChannels);
+        int missingPairs = Math.Max(0, 2 - eligiblePairs);
+        var seenBaselines = new Dictionary<(int A, int B), string>();
+
+        foreach (PairViewModel pair in ActivePairs)
+        {
+            bool hasChannelA = availableChannels.Contains(pair.Pair.ChannelA);
+            bool hasChannelB = availableChannels.Contains(pair.Pair.ChannelB);
+            if (!hasChannelA || !hasChannelB)
+            {
+                string missing = FormatChannelList(GetMissingPairChannels(pair.Pair, ch => availableChannels.Contains(ch)));
+                pair.SetLocalizationState(LocalizationPairState.Ignored,
+                    $"Ignored: {missing} not available on the selected capture device.");
+                continue;
+            }
+
+            bool mappedA = mappedChannels.Contains(pair.Pair.ChannelA);
+            bool mappedB = mappedChannels.Contains(pair.Pair.ChannelB);
+            if (!mappedA || !mappedB)
+            {
+                string missing = FormatChannelList(GetMissingPairChannels(pair.Pair, ch => mappedChannels.Contains(ch)));
+                pair.SetLocalizationState(LocalizationPairState.Ignored,
+                    $"Ignored: map {missing} in Geometry.");
+                continue;
+            }
+
+            if (seenBaselines.TryGetValue(pair.Pair.UnorderedKey, out string? firstPairLabel))
+            {
+                pair.SetLocalizationState(LocalizationPairState.Ignored,
+                    $"Ignored: same baseline already covered by {firstPairLabel ?? "the earlier pair"}.");
+                continue;
+            }
+
+            seenBaselines[pair.Pair.UnorderedKey] = pair.Label;
+
+            if (!HasValidSpatialGeometry)
+            {
+                pair.SetLocalizationState(LocalizationPairState.Waiting,
+                    $"Waiting: {GeometryIssueText}.");
+                continue;
+            }
+
+            if (eligiblePairs < 2)
+            {
+                pair.SetLocalizationState(LocalizationPairState.Waiting,
+                    missingPairs == 1
+                        ? "Waiting: add 1 more mapped pair."
+                        : $"Waiting: add {missingPairs} more mapped pairs.");
+                continue;
+            }
+
+            pair.SetLocalizationState(LocalizationPairState.Used, "Used by SRP-PHAT.");
+        }
+    }
+
+    private int GetEligibleLocalizationPairCount()
+    {
+        HashSet<int> availableChannels = AvailableChannels.ToHashSet();
+        HashSet<int> mappedChannels = GetMappedGeometryChannels(availableChannels);
+        return GetEligibleLocalizationPairCount(availableChannels, mappedChannels);
+    }
+
+    private int GetEligibleLocalizationPairCount(HashSet<int> availableChannels, HashSet<int> mappedChannels)
+        => ActivePairs
+            .Select(pair => pair.Pair)
+            .Where(pair => IsPairMappedForLocalization(pair, availableChannels, mappedChannels))
+            .Select(pair => pair.UnorderedKey)
+            .Distinct()
+            .Count();
+
+    private int GetUsedLocalizationPairCount(int eligiblePairs)
+        => HasValidSpatialGeometry && eligiblePairs >= 2
+            ? eligiblePairs
+            : 0;
+
+    private HashSet<int> GetMappedGeometryChannels(HashSet<int> availableChannels)
+        => MicPositions
+            .Where(p => p.Channel is int ch && availableChannels.Contains(ch))
+            .Select(p => p.Channel!.Value)
+            .ToHashSet();
+
+    private static bool IsPairMappedForLocalization(ChannelPair pair, HashSet<int> availableChannels, HashSet<int> mappedChannels)
+        => availableChannels.Contains(pair.ChannelA)
+           && availableChannels.Contains(pair.ChannelB)
+           && mappedChannels.Contains(pair.ChannelA)
+           && mappedChannels.Contains(pair.ChannelB);
+
+    private static IEnumerable<int> GetMissingPairChannels(ChannelPair pair, Func<int, bool> isPresent)
+    {
+        if (!isPresent(pair.ChannelA))
+        {
+            yield return pair.ChannelA;
+        }
+
+        if (!isPresent(pair.ChannelB))
+        {
+            yield return pair.ChannelB;
+        }
+    }
+
+    private static string FormatChannelList(IEnumerable<int> channels)
+        => string.Join(", ", channels.Distinct().Select(ch => $"Ch{ch}"));
+
+    private static string Pluralize(int count) => count == 1 ? string.Empty : "s";
+
+    private void OnActivePairsChanged(object? sender, NotifyCollectionChangedEventArgs e)
+    {
+        LocalizationPairsAutoApplied = false;
+        NotifyToolStateChanged();
+    }
 
     private void OnMicPositionsChanged(object? sender, NotifyCollectionChangedEventArgs e)
     {
@@ -931,11 +1498,13 @@ public sealed class MainViewModel : ObservableObject
             SyncBeamChannels();
             NotifyToolStateChanged();
             OnPropertyChanged(nameof(BeamModeStatusText));
+            UpdateBeamPattern();
         }
         else if (e.PropertyName == nameof(MicGeometryViewModel.IncludeInBeam))
         {
             SyncBeamChannels();
             OnPropertyChanged(nameof(BeamModeStatusText));
+            UpdateBeamPattern();
         }
     }
 
@@ -958,8 +1527,17 @@ public sealed class MainViewModel : ObservableObject
 
     private void NotifyToolStateChanged()
     {
+        RefreshLocalizationPairStates();
+        if (!CanLocalizeWithCurrentPairs)
+        {
+            _hasLiveAzimuth = false;
+        }
         OnPropertyChanged(nameof(DelayToolStatusText));
+        OnPropertyChanged(nameof(CanLocalizeWithCurrentPairs));
+        OnPropertyChanged(nameof(HasVisibleLocalizationAzimuth));
         OnPropertyChanged(nameof(LocalizationToolStatusText));
+        OnPropertyChanged(nameof(LocalizationPairSummaryText));
+        OnPropertyChanged(nameof(LocalizationPairHintText));
         OnPropertyChanged(nameof(BeamformerToolStatusText));
         OnPropertyChanged(nameof(BeamWorkflowText));
         OnPropertyChanged(nameof(BeamModeStatusText));

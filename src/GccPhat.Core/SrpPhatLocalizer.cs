@@ -5,7 +5,15 @@ namespace GccPhat.Core;
 /// <summary>Result of a single SRP-PHAT direction-of-arrival scan.</summary>
 /// <param name="AzimuthDeg">Estimated azimuth of the source, in degrees [0, 360).</param>
 /// <param name="Power">Steered response power at the winning azimuth (sum of per-pair correlations).</param>
-public readonly record struct SrpEstimate(double AzimuthDeg, double Power);
+/// <param name="CoarsePowers">Steered response power at each coarse azimuth bin (may be null).</param>
+/// <param name="CoarseStepDeg">Angular spacing between coarse bins in degrees.</param>
+public readonly record struct SrpEstimate(
+    double AzimuthDeg,
+    double Power,
+    double[]? CoarsePowers = null,
+    double CoarseStepDeg = 5.0,
+    double[,]? HemispherePowers = null,
+    double HemiElStepDeg = 5.0);
 
 /// <summary>
 /// Steered Response Power with Phase Transform (SRP-PHAT) far-field azimuth localizer.
@@ -40,6 +48,8 @@ public sealed class SrpPhatLocalizer
     private readonly double[] _lut;
 
     public int PairCount => _pairA.Length;
+    public int CoarseCount => _coarseCount;
+    public double CoarseStepDeg => _coarseStepDeg;
 
     /// <param name="micX">X coordinate of each microphone, in metres.</param>
     /// <param name="micY">Y coordinate of each microphone, in metres.</param>
@@ -125,7 +135,7 @@ public sealed class SrpPhatLocalizer
     /// same length and be ordered like this localizer's pairs; <paramref name="corrHalf"/> is the
     /// zero-lag bin (e.g. <c>nfft / 2</c>).
     /// </summary>
-    public SrpEstimate Estimate(double[][] correlations, int corrHalf)
+    public SrpEstimate Estimate(double[][] correlations, int corrHalf, double[]? coarsePowerBuffer = null)
     {
         if (correlations is null) throw new ArgumentNullException(nameof(correlations));
         if (correlations.Length != _pairA.Length)
@@ -143,6 +153,8 @@ public sealed class SrpPhatLocalizer
             {
                 power += Sample(correlations[p], corrHalf + _lut[p * _coarseCount + bin], len);
             }
+            if (coarsePowerBuffer != null && bin < coarsePowerBuffer.Length)
+                coarsePowerBuffer[bin] = power;
             if (power > bestPower)
             {
                 bestPower = power;
@@ -169,7 +181,34 @@ public sealed class SrpPhatLocalizer
 
         bestAz %= 360.0;
         if (bestAz < 0) bestAz += 360.0;
-        return new SrpEstimate(bestAz, bestPower);
+        return new SrpEstimate(bestAz, bestPower, coarsePowerBuffer, _coarseStepDeg);
+    }
+
+    /// <summary>
+    /// Fills a [nEl × nAz] hemisphere power map from the supplied correlations.
+    /// For a planar (z=0) array, the delay at (az, el) = cos(el) × delay(az, 0°), so elevation
+    /// scanning is free: just scale each LUT entry by cos(el). nAz must equal CoarseCount.
+    /// </summary>
+    public void ScanHemisphere(double[][] correlations, int corrHalf, double[,] hemiPowers, double elStepDeg = 5.0)
+    {
+        if (correlations is null) throw new ArgumentNullException(nameof(correlations));
+        int nEl = hemiPowers.GetLength(0);
+        int nAz = Math.Min(hemiPowers.GetLength(1), _coarseCount);
+        int len = correlations[0].Length;
+
+        for (int eBin = 0; eBin < nEl; eBin++)
+        {
+            double cosEl = Math.Cos(eBin * elStepDeg * Math.PI / 180.0);
+            for (int aBin = 0; aBin < nAz; aBin++)
+            {
+                double power = 0.0;
+                for (int p = 0; p < _pairA.Length; p++)
+                {
+                    power += Sample(correlations[p], corrHalf + cosEl * _lut[p * _coarseCount + aBin], len);
+                }
+                hemiPowers[eBin, aBin] = power;
+            }
+        }
     }
 
     // Linearly interpolates a correlation array at a fractional index, clamping to the valid range.

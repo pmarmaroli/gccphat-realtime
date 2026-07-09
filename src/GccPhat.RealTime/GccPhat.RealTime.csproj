@@ -8,6 +8,7 @@
     <PackageReference Include="NAudio" Version="2.2.1" />
     <PackageReference Include="Microsoft.ML.OnnxRuntime" Version="1.18.0" />
     <PackageReference Include="ScottPlot.WPF" Version="5.0.*" />
+    <PackageReference Include="PortAudioSharp2" Version="1.0.6" />
   </ItemGroup>
 
   <ItemGroup>

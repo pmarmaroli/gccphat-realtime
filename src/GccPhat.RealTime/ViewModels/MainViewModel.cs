@@ -1233,16 +1233,20 @@ public sealed class MainViewModel : ObservableObject
         OnPropertyChanged(nameof(HasVisibleLocalizationAzimuth));
     }
 
-    private void Start(bool isRetry = false)
+    private int _captureGeneration;
+
+    private void Start(bool isRetry = false, bool forcePortAudio = false)
     {
         if (SelectedDevice is null)
         {
             return;
         }
 
+        int generation = ++_captureGeneration;
+
         try
         {
-            var capture = new MultichannelCapture(SelectedDevice);
+            var capture = new MultichannelCapture(SelectedDevice, forcePortAudio);
 
             int nyquist = capture.SampleRate / 2;
             int fmax = Math.Min(Fmax, nyquist);
@@ -1260,6 +1264,14 @@ public sealed class MainViewModel : ObservableObject
             IsRunning = true;
             StatusText = $"Running on \"{SelectedDevice.Name}\" — {capture.ChannelCount} ch @ {capture.SampleRate} Hz, "
                        + $"window {SelectedBufferSize}, band {Fmin}\u2013{fmax} Hz.";
+            if (forcePortAudio)
+            {
+                StatusText = "(WDM-KS) " + StatusText;
+            }
+            else
+            {
+                ProbeForSilence(capture, generation);
+            }
         }
         catch (Exception ex)
         {
@@ -1276,6 +1288,52 @@ public sealed class MainViewModel : ObservableObject
                 : string.Empty;
             StatusText = $"Failed to start capture: {ex.Message}.{hint}";
         }
+    }
+
+    /// <summary>
+    /// Some mic-array drivers install a voice-processing APO that silences the WASAPI stream
+    /// outright. ~500 ms after a successful WASAPI start, checks whether every channel is still at
+    /// the noise floor and, if so, restarts through the WDM-KS backend instead (bypasses the APO).
+    /// </summary>
+    private void ProbeForSilence(MultichannelCapture capture, int generation)
+    {
+        var timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(500) };
+        timer.Tick += (_, _) =>
+        {
+            timer.Stop();
+            if (generation != _captureGeneration || !IsRunning)
+            {
+                return; // stopped or restarted (by the user or another probe) since this was scheduled
+            }
+            if (IsCaptureSilent(capture))
+            {
+                Stop();
+                StatusText = "WASAPI came back silent - switched to WDM-KS raw capture.";
+                Start(forcePortAudio: true);
+            }
+        };
+        timer.Start();
+    }
+
+    private static bool IsCaptureSilent(MultichannelCapture capture)
+    {
+        const double thresholdLinear = 1e-4; // ~ -80 dBFS
+        var buf = new double[256];
+        for (int c = 0; c < capture.ChannelCount; c++)
+        {
+            if (!capture.GetChannel(c).CopyLatest(buf))
+            {
+                return false; // not enough data yet to judge; don't fall back on insufficient data
+            }
+            for (int i = 0; i < buf.Length; i++)
+            {
+                if (Math.Abs(buf[i]) > thresholdLinear)
+                {
+                    return false;
+                }
+            }
+        }
+        return true;
     }
 
     /// <summary>

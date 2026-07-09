@@ -14,6 +14,11 @@ namespace GccPhat.RealTime.Audio;
 /// capture (driving <see cref="AudioClient"/> directly) when the device exposes more channels
 /// natively than the shared mix format does — which is the usual case for USB microphone arrays
 /// that Windows presents as stereo in shared mode.
+///
+/// A third mode, forced via <c>forcePortAudio</c>, bypasses WASAPI entirely and captures through
+/// PortAudio's WDM-KS host API (<see cref="PortAudioWdmKsCapture"/>). This exists because some
+/// mic-array drivers install a voice-processing APO that silences the WASAPI stream outright —
+/// WDM-KS talks straight to the driver, below that APO. See MainViewModel's silence-probe fallback.
 /// </summary>
 public sealed class MultichannelCapture : IDisposable
 {
@@ -21,10 +26,11 @@ public sealed class MultichannelCapture : IDisposable
     private static readonly Guid SubtypeIeeeFloat = new("00000003-0000-0010-8000-00aa00389b71");
 
     private readonly ChannelRingBuffer[] _channels;
-    private readonly Func<byte[], int, double> _readSample;
+    private readonly Func<byte[], int, double>? _readSample;
     private readonly int _bytesPerSample;
     private readonly int _blockAlign;
     private readonly bool _exclusive;
+    private readonly bool _portAudio;
     private double[][] _scratch;
 
     // Shared-mode capture.
@@ -38,8 +44,22 @@ public sealed class MultichannelCapture : IDisposable
     private volatile bool _running;
     private byte[] _byteScratch = Array.Empty<byte>();
 
-    public MultichannelCapture(AudioDeviceInfo info)
+    // WDM-KS (PortAudio) capture.
+    private readonly PortAudioWdmKsCapture? _portAudioCapture;
+
+    public MultichannelCapture(AudioDeviceInfo info, bool forcePortAudio = false)
     {
+        if (forcePortAudio)
+        {
+            _portAudio = true;
+            _portAudioCapture = new PortAudioWdmKsCapture(info);
+            ChannelCount = _portAudioCapture.ChannelCount;
+            SampleRate = _portAudioCapture.SampleRate;
+            _channels = Array.Empty<ChannelRingBuffer>(); // unused in this mode; GetChannel delegates below
+            _scratch = Array.Empty<double[]>();
+            return;
+        }
+
         WaveFormat format;
         if (info.UseExclusive && info.NativeFormat is not null)
         {
@@ -76,11 +96,15 @@ public sealed class MultichannelCapture : IDisposable
     public int ChannelCount { get; }
     public int SampleRate { get; }
 
-    public ChannelRingBuffer GetChannel(int index) => _channels[index];
+    public ChannelRingBuffer GetChannel(int index) => _portAudio ? _portAudioCapture!.GetChannel(index) : _channels[index];
 
     public void Start()
     {
-        if (_exclusive)
+        if (_portAudio)
+        {
+            _portAudioCapture!.Start();
+        }
+        else if (_exclusive)
         {
             _running = true;
             _audioClient!.Start();
@@ -95,7 +119,11 @@ public sealed class MultichannelCapture : IDisposable
 
     public void Stop()
     {
-        if (_exclusive)
+        if (_portAudio)
+        {
+            _portAudioCapture!.Stop();
+        }
+        else if (_exclusive)
         {
             _running = false;
             _captureThread?.Join(500);
@@ -190,7 +218,7 @@ public sealed class MultichannelCapture : IDisposable
             for (int c = 0; c < ChannelCount; c++)
             {
                 int offset = frameOffset + c * _bytesPerSample;
-                _scratch[c][f] = _readSample(buffer, offset);
+                _scratch[c][f] = _readSample!(buffer, offset);
             }
         }
 
@@ -260,5 +288,6 @@ public sealed class MultichannelCapture : IDisposable
         }
         _audioClient?.Dispose();
         _eventHandle?.Dispose();
+        _portAudioCapture?.Dispose();
     }
 }

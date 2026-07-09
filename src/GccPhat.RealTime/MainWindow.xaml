@@ -127,6 +127,7 @@
                                     <RowDefinition Height="Auto" />
                                     <RowDefinition Height="Auto" />
                                     <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
                                 </Grid.RowDefinitions>
                                 <TextBlock Grid.Row="0" Grid.Column="0" Text="Array" Foreground="{StaticResource TextDimBrush}" VerticalAlignment="Center" Margin="0,4" />
                                 <ComboBox Grid.Row="0" Grid.Column="1" Margin="8,4" ItemsSource="{Binding LayoutOptions}" SelectedItem="{Binding SelectedLayout}" />
@@ -143,6 +144,12 @@
                                 <CheckBox Grid.Row="3" Grid.Column="1" Margin="8,6,4,2" Content="Additional mic in the center"
                                          IsChecked="{Binding HasCenterMic}"
                                          Visibility="{Binding IsCircular, Converter={StaticResource BoolToVis}}" />
+                                <StackPanel Grid.Row="4" Grid.Column="0" Grid.ColumnSpan="2" Orientation="Horizontal" Margin="0,6,4,2">
+                                    <Button Content="Preset: 4-mic linear, 4 cm (broadside)"
+                                            Command="{Binding ApplyLinearBroadsidePresetCommand}" />
+                                    <Button Content="Preset: 6-mic circular, 8 cm + center" Margin="8,0,0,0"
+                                            Command="{Binding ApplyCircular6CenterPresetCommand}" />
+                                </StackPanel>
                             </Grid>
 
                             <TextBlock Text="Assign channel to each position" Foreground="{StaticResource TextDimBrush}" Margin="0,8,0,2" FontSize="12" />

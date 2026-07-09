@@ -45,6 +45,7 @@ public partial class ArrayMapWindow : Window
             case nameof(MainViewModel.CanLocalizeWithCurrentPairs):
             case nameof(MainViewModel.HasVisibleLocalizationAzimuth):
             case nameof(MainViewModel.ShowHemisphere):
+            case nameof(MainViewModel.HasFrontBackAmbiguity):
                 Redraw();
                 break;
         }
@@ -69,6 +70,11 @@ public partial class ArrayMapWindow : Window
         Brush accent = (Brush)FindResource("AccentBrush");
 
         ArrayGeometryCanvasDrawing.DrawCompass(c, w, h, dim);
+
+        if (_viewModel.HasFrontBackAmbiguity)
+        {
+            ArrayGeometryCanvasDrawing.DrawAmbiguityMask(c, cx, cy, radius, dim);
+        }
 
         // Mic positions and pair lines are always visible regardless of threshold.
         double scale = ArrayGeometryCanvasDrawing.ComputeGeometryScale(_viewModel.MicPositions, radius);
@@ -120,15 +126,18 @@ public partial class ArrayMapWindow : Window
 
         Color accentColor = accent is SolidColorBrush scb ? scb.Color : Colors.Cyan;
 
+        // Front/back-ambiguous arrays only scan [180°, 360°) — see SrpPhatLocalizer._searchBinStart.
+        double azStart = _viewModel.HasFrontBackAmbiguity ? 180.0 : 0.0;
+
         // Power visualization: hemisphere heat map (if enabled) or 2D polar spectrum.
         if (_viewModel.ShowHemisphere && _viewModel.HemispherePowers is double[,] hemi)
         {
             ArrayGeometryCanvasDrawing.DrawHemisphereHeatMap(c, cx, cy, radius, hemi,
-                _viewModel.HemiElStepDeg, _viewModel.SrpSpectrumStepDeg, accentColor);
+                _viewModel.HemiElStepDeg, _viewModel.SrpSpectrumStepDeg, accentColor, azStart);
         }
         else if (_viewModel.SrpSpectrum is double[] spectrum && spectrum.Length > 0)
         {
-            ArrayGeometryCanvasDrawing.DrawSrpSpectrum(c, cx, cy, radius, spectrum, _viewModel.SrpSpectrumStepDeg, accentColor);
+            ArrayGeometryCanvasDrawing.DrawSrpSpectrum(c, cx, cy, radius, spectrum, _viewModel.SrpSpectrumStepDeg, accentColor, azStart);
         }
 
         // Azimuth arrow (0deg = +X, CCW).

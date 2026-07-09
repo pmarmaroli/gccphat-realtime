@@ -68,7 +68,7 @@ internal static class ArrayGeometryCanvasDrawing
     /// For a planar array the map will show arcs (not points), correctly exposing the elevation ambiguity.
     /// </summary>
     public static void DrawHemisphereHeatMap(Canvas canvas, double cx, double cy, double compassRadius,
-        double[,] hemiPowers, double elStepDeg, double azStepDeg, Color accentColor)
+        double[,] hemiPowers, double elStepDeg, double azStepDeg, Color accentColor, double azStartDeg = 0.0)
     {
         int nEl = hemiPowers.GetLength(0);
         int nAz = hemiPowers.GetLength(1);
@@ -92,6 +92,7 @@ internal static class ArrayGeometryCanvasDrawing
         int stride = bmpSize * 4;
         byte[] pixels = new byte[bmpSize * stride];
         double bCx = bmpSize * 0.5, bCy = bmpSize * 0.5;
+        double azSpanDeg = nAz * azStepDeg;
 
         for (int py = 0; py < bmpSize; py++)
         {
@@ -105,9 +106,10 @@ internal static class ArrayGeometryCanvasDrawing
                 double el = 90.0 * (1.0 - r / compassRadius);
                 double az = Math.Atan2(-dy, dx) * 180.0 / Math.PI;
                 if (az < 0) az += 360.0;
+                if (az < azStartDeg || az >= azStartDeg + azSpanDeg) continue; // outside the scanned azimuth range
 
                 int eBin = Math.Min((int)(el / elStepDeg), nEl - 1);
-                int aBin = (int)(az / azStepDeg) % nAz;
+                int aBin = Math.Min((int)((az - azStartDeg) / azStepDeg), nAz - 1);
 
                 double norm = (hemiPowers[eBin, aBin] - minP) / range;
                 double normSq = norm * norm; // accentuate peaks
@@ -134,7 +136,7 @@ internal static class ArrayGeometryCanvasDrawing
     /// Draws a polar plot of the SRP-PHAT coarse power spectrum as a filled polygon.
     /// The plot is scaled to occupy the inner portion of the compass (up to ~55% of compass radius).
     /// </summary>
-    public static void DrawSrpSpectrum(Canvas canvas, double cx, double cy, double compassRadius, double[] powers, double stepDeg, Color accentColor)
+    public static void DrawSrpSpectrum(Canvas canvas, double cx, double cy, double compassRadius, double[] powers, double stepDeg, Color accentColor, double startDeg = 0.0)
     {
         if (powers == null || powers.Length < 2) return;
 
@@ -153,7 +155,7 @@ internal static class ArrayGeometryCanvasDrawing
         var points = new PointCollection(powers.Length + 1);
         for (int i = 0; i < powers.Length; i++)
         {
-            double az = i * stepDeg;
+            double az = startDeg + i * stepDeg;
             double norm = (powers[i] - minPow) / range;
             double r = innerR + norm * (outerR - innerR);
             double rad = az * Math.PI / 180.0;
@@ -175,6 +177,29 @@ internal static class ArrayGeometryCanvasDrawing
             StrokeThickness = 1.0
         };
         canvas.Children.Add(poly);
+    }
+
+    /// <summary>Shades the back half (Y &lt; 0) of the compass disc, marking the region excluded from
+    /// a linear array's front/back-ambiguous search. Shades the top half (north, Y ≥ 0, azimuth
+    /// [0°, 180°)) since the user is assumed south of the array — see SrpPhatLocalizer._searchBinStart.</summary>
+    public static void DrawAmbiguityMask(Canvas canvas, double cx, double cy, double radius, Brush dim)
+    {
+        var figure = new PathFigure { StartPoint = new Point(cx - radius, cy), IsClosed = true };
+        figure.Segments.Add(new ArcSegment(
+            new Point(cx + radius, cy),
+            new Size(radius, radius),
+            0.0,
+            isLargeArc: true,
+            sweepDirection: SweepDirection.Counterclockwise,
+            isStroked: false));
+
+        var mask = new Path
+        {
+            Data = new PathGeometry(new[] { figure }),
+            Fill = new SolidColorBrush(Color.FromArgb(60, 0, 0, 0))
+        };
+        canvas.Children.Add(mask);
+        AddText(canvas, "back (ambiguous)", cx - 44.0, cy - radius * 0.5, dim);
     }
 
     public static void DrawPairLine(Canvas canvas, double x1, double y1, double x2, double y2, Brush stroke, bool isUsed)

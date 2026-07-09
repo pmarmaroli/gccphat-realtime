@@ -48,6 +48,7 @@ public sealed class MainViewModel : ObservableObject
     private double _diameterCm = 8;
     private double _spacingCm = 5;
     private bool _hasCenterMic = true;
+    private bool _hasFrontBackAmbiguity;
     private string _azimuthText = "Azimuth: --";
     private double _levelThresholdDb = -70;
     private bool _localizationPairsAutoApplied;
@@ -64,6 +65,8 @@ public sealed class MainViewModel : ObservableObject
         AddOppositePairsCommand = new RelayCommand(AddOppositePairs);
         AddConsecutivePairsCommand = new RelayCommand(AddConsecutivePairs);
         AddAllPairsCommand = new RelayCommand(AddAllPairs);
+        ApplyLinearBroadsidePresetCommand = new RelayCommand(ApplyLinearBroadsidePreset);
+        ApplyCircular6CenterPresetCommand = new RelayCommand(ApplyCircular6CenterPreset);
         StartCommand = new RelayCommand(() => Start(), () => !IsRunning && SelectedDevice is not null);
         StopCommand = new RelayCommand(Stop, () => IsRunning);
         ListenCommand = new RelayCommand(() => BeamListening = !BeamListening, () => IsRunning);
@@ -118,6 +121,14 @@ public sealed class MainViewModel : ObservableObject
 
     public bool IsCircular => _selectedLayout == "Circular";
     public bool IsLinear => _selectedLayout == "Linear";
+
+    /// <summary>True when the current mic positions are collinear (all Y equal), which makes a
+    /// source and its mirror image across the array line indistinguishable (front/back ambiguity).</summary>
+    public bool HasFrontBackAmbiguity
+    {
+        get => _hasFrontBackAmbiguity;
+        private set => SetProperty(ref _hasFrontBackAmbiguity, value);
+    }
 
     public int MicCount
     {
@@ -422,6 +433,8 @@ public sealed class MainViewModel : ObservableObject
     public RelayCommand AddOppositePairsCommand { get; }
     public RelayCommand AddConsecutivePairsCommand { get; }
     public RelayCommand AddAllPairsCommand { get; }
+    public RelayCommand ApplyLinearBroadsidePresetCommand { get; }
+    public RelayCommand ApplyCircular6CenterPresetCommand { get; }
     public RelayCommand StartCommand { get; }
     public RelayCommand StopCommand { get; }
     public RelayCommand ListenCommand { get; }
@@ -842,6 +855,23 @@ public sealed class MainViewModel : ObservableObject
         RaiseCommandStates();
     }
 
+    /// <summary>Sets the default 4-mic linear array (4 cm spacing), broadside to the user.</summary>
+    private void ApplyLinearBroadsidePreset()
+    {
+        SelectedLayout = "Linear";
+        MicCount = 4;
+        SpacingCm = 4;
+    }
+
+    /// <summary>Sets a 6-mic circular array (8 cm diameter) with an additional center mic.</summary>
+    private void ApplyCircular6CenterPreset()
+    {
+        SelectedLayout = "Circular";
+        MicCount = 6;
+        DiameterCm = 8;
+        HasCenterMic = true;
+    }
+
     // Recomputes mic positions (metres) from the selected array layout and its parameters.
     private void RebuildPositions()
     {
@@ -870,6 +900,7 @@ public sealed class MainViewModel : ObservableObject
                 MicPositions.Add(new MicGeometryViewModel(i, x0 + i * d, 0.0, AvailableChannels));
             }
         }
+        HasFrontBackAmbiguity = MicPositions.Count >= 2 && MicPositions.Max(p => p.Y) - MicPositions.Min(p => p.Y) < 1e-9;
         AttachGeometryPositionHandlers();
         UpdateBeamBand();
         UpdateBeamPattern();

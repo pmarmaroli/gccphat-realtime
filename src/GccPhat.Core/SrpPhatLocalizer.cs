@@ -47,9 +47,19 @@ public sealed class SrpPhatLocalizer
     // _lut[pair * _coarseCount + bin] = inter-mic lag (in fractional samples) for that pair/azimuth.
     private readonly double[] _lut;
 
+    // A collinear (linear) array cannot distinguish a direction from its mirror image across the
+    // array line, so the search is restricted to the front half [180°, 360°) — the user is assumed
+    // south of the array (mics at north, facing south). See RebuildPositions in MainViewModel,
+    // which always lays a linear array along the local X axis at Y=0, and DrawAmbiguityMask in
+    // ArrayGeometryCanvasDrawing, which must shade the same excluded half [0°, 180°).
+    private readonly bool _hasFrontBackAmbiguity;
+    private readonly int _searchBinCount;
+    private readonly int _searchBinStart;
+
     public int PairCount => _pairA.Length;
-    public int CoarseCount => _coarseCount;
+    public int CoarseCount => _searchBinCount;
     public double CoarseStepDeg => _coarseStepDeg;
+    public bool HasFrontBackAmbiguity => _hasFrontBackAmbiguity;
 
     /// <param name="micX">X coordinate of each microphone, in metres.</param>
     /// <param name="micY">Y coordinate of each microphone, in metres.</param>
@@ -112,6 +122,16 @@ public sealed class SrpPhatLocalizer
                 _lut[p * _coarseCount + bin] = LagSamples(p, az);
             }
         }
+
+        double minY = double.MaxValue, maxY = double.MinValue;
+        for (int i = 0; i < micY.Length; i++)
+        {
+            if (micY[i] < minY) minY = micY[i];
+            if (micY[i] > maxY) maxY = micY[i];
+        }
+        _hasFrontBackAmbiguity = maxY - minY < 1e-9;
+        _searchBinCount = _hasFrontBackAmbiguity ? _coarseCount / 2 : _coarseCount;
+        _searchBinStart = _hasFrontBackAmbiguity ? _coarseCount / 2 : 0;
     }
 
     /// <summary>
@@ -144,17 +164,18 @@ public sealed class SrpPhatLocalizer
         }
         int len = correlations[0].Length;
 
-        int bestBin = 0;
+        int bestBin = _searchBinStart;
         double bestPower = double.MinValue;
-        for (int bin = 0; bin < _coarseCount; bin++)
+        for (int i = 0; i < _searchBinCount; i++)
         {
+            int bin = _searchBinStart + i;
             double power = 0.0;
             for (int p = 0; p < _pairA.Length; p++)
             {
                 power += Sample(correlations[p], corrHalf + _lut[p * _coarseCount + bin], len);
             }
-            if (coarsePowerBuffer != null && bin < coarsePowerBuffer.Length)
-                coarsePowerBuffer[bin] = power;
+            if (coarsePowerBuffer != null && i < coarsePowerBuffer.Length)
+                coarsePowerBuffer[i] = power;
             if (power > bestPower)
             {
                 bestPower = power;
@@ -167,6 +188,10 @@ public sealed class SrpPhatLocalizer
         for (double off = -_fineRangeDeg; off <= _fineRangeDeg + 1e-9; off += _fineStepDeg)
         {
             double az = centre + off;
+            if (_hasFrontBackAmbiguity && (az < 180.0 || az >= 360.0))
+            {
+                continue;
+            }
             double power = 0.0;
             for (int p = 0; p < _pairA.Length; p++)
             {
@@ -193,7 +218,7 @@ public sealed class SrpPhatLocalizer
     {
         if (correlations is null) throw new ArgumentNullException(nameof(correlations));
         int nEl = hemiPowers.GetLength(0);
-        int nAz = Math.Min(hemiPowers.GetLength(1), _coarseCount);
+        int nAz = Math.Min(hemiPowers.GetLength(1), _searchBinCount);
         int len = correlations[0].Length;
 
         for (int eBin = 0; eBin < nEl; eBin++)
@@ -204,7 +229,7 @@ public sealed class SrpPhatLocalizer
                 double power = 0.0;
                 for (int p = 0; p < _pairA.Length; p++)
                 {
-                    power += Sample(correlations[p], corrHalf + cosEl * _lut[p * _coarseCount + aBin], len);
+                    power += Sample(correlations[p], corrHalf + cosEl * _lut[p * _coarseCount + _searchBinStart + aBin], len);
                 }
                 hemiPowers[eBin, aBin] = power;
             }

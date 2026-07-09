@@ -64,7 +64,7 @@ public sealed class MainViewModel : ObservableObject
         AddOppositePairsCommand = new RelayCommand(AddOppositePairs);
         AddConsecutivePairsCommand = new RelayCommand(AddConsecutivePairs);
         AddAllPairsCommand = new RelayCommand(AddAllPairs);
-        StartCommand = new RelayCommand(Start, () => !IsRunning && SelectedDevice is not null);
+        StartCommand = new RelayCommand(() => Start(), () => !IsRunning && SelectedDevice is not null);
         StopCommand = new RelayCommand(Stop, () => IsRunning);
         ListenCommand = new RelayCommand(() => BeamListening = !BeamListening, () => IsRunning);
 
@@ -1202,7 +1202,7 @@ public sealed class MainViewModel : ObservableObject
         OnPropertyChanged(nameof(HasVisibleLocalizationAzimuth));
     }
 
-    private void Start()
+    private void Start(bool isRetry = false)
     {
         if (SelectedDevice is null)
         {
@@ -1233,11 +1233,57 @@ public sealed class MainViewModel : ObservableObject
         catch (Exception ex)
         {
             IsRunning = false;
+
+            if (!isRetry && SelectedDevice.UseExclusive && TryOfferToCloseHolders())
+            {
+                Start(isRetry: true);
+                return;
+            }
+
             string hint = SelectedDevice.UseExclusive
                 ? " This device needs exclusive mode for all channels; close any app using it and retry."
                 : string.Empty;
             StatusText = $"Failed to start capture: {ex.Message}.{hint}";
         }
+    }
+
+    /// <summary>
+    /// Looks up other processes with an active session on the selected device and, if the user
+    /// agrees, force-closes them. Returns true if the user confirmed and at least one was closed.
+    /// </summary>
+    private bool TryOfferToCloseHolders()
+    {
+        var holders = AudioSessionInspector.FindActiveHolders(SelectedDevice!.Device);
+        if (holders.Count == 0)
+        {
+            return false;
+        }
+
+        string names = string.Join(", ", holders.Select(h => $"{h.ProcessName} (PID {h.ProcessId})"));
+        var result = System.Windows.MessageBox.Show(
+            $"These apps appear to be using \"{SelectedDevice.Name}\":\n{names}\n\nClose them and retry?",
+            "Microphone in use",
+            System.Windows.MessageBoxButton.YesNo,
+            System.Windows.MessageBoxImage.Warning);
+
+        if (result != System.Windows.MessageBoxResult.Yes)
+        {
+            return false;
+        }
+
+        var failed = AudioSessionInspector.KillAll(holders);
+        if (failed.Count > 0)
+        {
+            string failedNames = string.Join(", ", failed.Select(h => h.ProcessName));
+            System.Windows.MessageBox.Show(
+                $"Could not close: {failedNames}. Close them manually and retry.",
+                "Microphone in use",
+                System.Windows.MessageBoxButton.OK,
+                System.Windows.MessageBoxImage.Warning);
+        }
+
+        System.Threading.Thread.Sleep(300); // let the audio engine release the endpoint
+        return failed.Count < holders.Count;
     }
 
     private void Stop()

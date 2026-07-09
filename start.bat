@@ -51,6 +51,15 @@ echo [1/3] Installing tensorflow + tf2onnx via pip...
 python -m pip install --quiet --upgrade tensorflow tensorflow-hub tf2onnx
 if errorlevel 1 (
     echo [WARN] pip install failed - skipping YAMNet setup.
+    echo.
+    echo        Diagnostics:
+    for /f "delims=" %%V in ('python --version 2^>^&1') do echo          Python version : %%V
+    for /f "delims=" %%A in ('python -c "import platform;print(platform.machine())" 2^>^&1') do echo          Architecture   : %%A
+    echo.
+    echo        TensorFlow requires 64-bit Python 3.9-3.12 on x86_64.
+    echo        Python 3.13+, ARM64 ^(Surface/Snapdragon^), or 32-bit Python have no TF wheel.
+    echo        Fix: install Python 3.11 or 3.12 x64 from https://python.org, then re-run.
+    echo.
     goto :after_yamnet
 )
 

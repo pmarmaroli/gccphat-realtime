@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Windows;
 using GccPhat.RealTime.Analysis;
 using GccPhat.RealTime.ViewModels;
+using Microsoft.Win32;
 
 namespace GccPhat.RealTime;
 
@@ -19,7 +20,21 @@ public partial class MainWindow : Window
         _viewModel.Engine.ChannelLevelsReady += OnChannelLevels;
         _viewModel.Engine.AzimuthReady += OnAzimuth;
         _viewModel.Engine.ClassificationReady += OnClassificationReady;
+        _viewModel.ReplayFinished += OnReplayFinished;
     }
+
+    private void OnBrowseReplayFile(object sender, RoutedEventArgs e)
+    {
+        var dlg = new OpenFileDialog { Filter = "WAV audio (*.wav)|*.wav", Title = "Select multichannel WAV file" };
+        if (dlg.ShowDialog() == true)
+        {
+            _viewModel.LoadReplayFile(dlg.FileName);
+        }
+    }
+
+    // Raised on the replay pump thread when a file finishes playing on its own.
+    private void OnReplayFinished(object? sender, EventArgs e)
+        => Dispatcher.BeginInvoke(() => _viewModel.StopCommand.Execute(null));
 
     private void OnChannelLevels(double[] levels)
         => Dispatcher.BeginInvoke(() => _viewModel.UpdateChannelLevels(levels));
@@ -123,6 +138,7 @@ public partial class MainWindow : Window
         _viewModel.Engine.ChannelLevelsReady -= OnChannelLevels;
         _viewModel.Engine.AzimuthReady -= OnAzimuth;
         _viewModel.Engine.ClassificationReady -= OnClassificationReady;
+        _viewModel.ReplayFinished -= OnReplayFinished;
         _viewModel.Classifier.Dispose();
         _viewModel.Engine.Stop();
         _viewModel.Shutdown();

@@ -67,13 +67,27 @@
                     <Border Style="{StaticResource Card}">
                         <StackPanel>
                             <TextBlock Style="{StaticResource SectionHeader}" Text="CAPTURE DEVICE" />
-                            <DockPanel>
+                            <StackPanel Orientation="Horizontal" Margin="0,0,0,8" IsEnabled="{Binding CanEditConfig}">
+                                <RadioButton Content="Live device" GroupName="CaptureMode" IsChecked="{Binding IsLiveMode}" Margin="0,0,16,0" />
+                                <RadioButton Content="Audio file" GroupName="CaptureMode" IsChecked="{Binding IsFileMode}" />
+                            </StackPanel>
+
+                            <DockPanel Visibility="{Binding IsLiveMode, Converter={StaticResource BoolToVis}}">
                                 <Button DockPanel.Dock="Right" Content="Refresh" Width="74" Margin="8,0,0,0"
                                         Command="{Binding RefreshDevicesCommand}" IsEnabled="{Binding CanEditConfig}" />
                                 <ComboBox ItemsSource="{Binding Devices}"
                                           SelectedItem="{Binding SelectedDevice}"
                                           IsEnabled="{Binding CanEditConfig}" />
                             </DockPanel>
+
+                            <StackPanel Visibility="{Binding IsFileMode, Converter={StaticResource BoolToVis}}">
+                                <DockPanel>
+                                    <Button DockPanel.Dock="Right" Content="Browse&#8230;" Width="74" Margin="8,0,0,0"
+                                            Click="OnBrowseReplayFile" IsEnabled="{Binding CanEditConfig}" />
+                                    <TextBlock Text="{Binding ReplayFileLabel}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+                                </DockPanel>
+                                <TextBlock Text="{Binding ReplayChannelsDetectedText}" Foreground="{StaticResource TextDimBrush}" Margin="0,6,0,0" />
+                            </StackPanel>
                         </StackPanel>
                     </Border>
 
@@ -132,7 +146,7 @@
                                 <TextBlock Grid.Row="0" Grid.Column="0" Text="Array" Foreground="{StaticResource TextDimBrush}" VerticalAlignment="Center" Margin="0,4" />
                                 <ComboBox Grid.Row="0" Grid.Column="1" Margin="8,4" ItemsSource="{Binding LayoutOptions}" SelectedItem="{Binding SelectedLayout}" />
                                 <TextBlock Grid.Row="1" Grid.Column="0" Text="Mic count" Foreground="{StaticResource TextDimBrush}" VerticalAlignment="Center" Margin="0,4" />
-                                <TextBox Grid.Row="1" Grid.Column="1" Margin="8,4" Text="{Binding MicCount}" />
+                                <TextBox Grid.Row="1" Grid.Column="1" Margin="8,4" Text="{Binding MicCount}" IsEnabled="{Binding CanEditMicCount}" />
                                 <TextBlock Grid.Row="2" Grid.Column="0" Text="Diameter (cm)" Foreground="{StaticResource TextDimBrush}" VerticalAlignment="Center" Margin="0,4"
                                            Visibility="{Binding IsCircular, Converter={StaticResource BoolToVis}}" />
                                 <TextBox Grid.Row="2" Grid.Column="1" Margin="8,4" Text="{Binding DiameterCm}"
@@ -144,16 +158,38 @@
                                 <CheckBox Grid.Row="3" Grid.Column="1" Margin="8,6,4,2" Content="Additional mic in the center"
                                          IsChecked="{Binding HasCenterMic}"
                                          Visibility="{Binding IsCircular, Converter={StaticResource BoolToVis}}" />
-                                <StackPanel Grid.Row="4" Grid.Column="0" Grid.ColumnSpan="2" Orientation="Horizontal" Margin="0,6,4,2">
-                                    <Button Content="Preset: 4-mic linear, 4 cm (broadside)"
-                                            Command="{Binding ApplyLinearBroadsidePresetCommand}" />
-                                    <Button Content="Preset: 6-mic circular, 8 cm + center" Margin="8,0,0,0"
-                                            Command="{Binding ApplyCircular6CenterPresetCommand}" />
-                                </StackPanel>
+                                <ComboBox Grid.Row="4" Grid.Column="0" Grid.ColumnSpan="2" Margin="0,6,4,2"
+                                          ItemsSource="{Binding QuickPresetOptions}" SelectedItem="{Binding SelectedQuickPreset}" />
                             </Grid>
 
+                            <!-- Saved geometry presets -->
+                            <StackPanel Margin="0,10,4,2" IsEnabled="{Binding CanEditConfig}">
+                                <TextBlock Text="Saved presets" Foreground="{StaticResource TextDimBrush}" FontSize="12" Margin="0,0,0,4" />
+                                <DockPanel Margin="0,0,0,4">
+                                    <Button DockPanel.Dock="Right" Content="Load" Width="60" Margin="6,0,0,0" Command="{Binding LoadPresetCommand}" />
+                                    <ComboBox ItemsSource="{Binding PresetNames}" SelectedItem="{Binding SelectedPresetName}" />
+                                </DockPanel>
+                                <DockPanel>
+                                    <Button DockPanel.Dock="Right" Content="Delete" Width="60" Margin="6,0,0,0" Command="{Binding DeletePresetCommand}" />
+                                    <Button DockPanel.Dock="Right" Content="Save As" Width="66" Margin="6,0,0,0" Command="{Binding SaveAsPresetCommand}" />
+                                    <Button DockPanel.Dock="Right" Content="Save" Width="52" Margin="6,0,0,0" Command="{Binding SavePresetCommand}" />
+                                    <TextBox Text="{Binding NewPresetName, UpdateSourceTrigger=PropertyChanged}" />
+                                </DockPanel>
+                            </StackPanel>
+
+                            <!-- Custom layout: array-wide coordinate entry mode -->
+                            <StackPanel Orientation="Horizontal" Margin="0,10,4,2"
+                                        Visibility="{Binding IsCustom, Converter={StaticResource BoolToVis}}"
+                                        IsEnabled="{Binding CanEditConfig}">
+                                <RadioButton Content="Cartesian (X/Y/Z)" GroupName="CustomInputMode" IsChecked="{Binding IsCustomCartesian}" Margin="0,0,16,0" />
+                                <RadioButton Content="Spherical (Az/El/R)" GroupName="CustomInputMode" IsChecked="{Binding IsCustomSpherical}" />
+                            </StackPanel>
+
                             <TextBlock Text="Assign channel to each position" Foreground="{StaticResource TextDimBrush}" Margin="0,8,0,2" FontSize="12" />
-                            <ItemsControl ItemsSource="{Binding MicPositions}" IsEnabled="{Binding CanEditConfig}">
+
+                            <!-- Circular/Linear: computed, read-only positions -->
+                            <ItemsControl ItemsSource="{Binding MicPositions}" IsEnabled="{Binding CanEditConfig}"
+                                          Visibility="{Binding IsNotCustom, Converter={StaticResource BoolToVis}}">
                                 <ItemsControl.ItemTemplate>
                                     <DataTemplate>
                                         <Grid Margin="0,3">
@@ -164,6 +200,39 @@
                                             </Grid.ColumnDefinitions>
                                             <TextBlock Grid.Column="0" Text="{Binding Name}" FontFamily="Consolas" Foreground="{StaticResource TextBrush}" VerticalAlignment="Center" />
                                             <TextBlock Grid.Column="1" Text="{Binding CoordText}" FontFamily="Consolas" FontSize="12" Foreground="{StaticResource TextDimBrush}" VerticalAlignment="Center" />
+                                            <ComboBox Grid.Column="2" ItemsSource="{Binding AvailableChannels}" SelectedItem="{Binding Channel}" />
+                                        </Grid>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+
+                            <!-- Custom: freely editable positions, cartesian or spherical entry -->
+                            <ItemsControl ItemsSource="{Binding MicPositions}" IsEnabled="{Binding CanEditConfig}"
+                                          Visibility="{Binding IsCustom, Converter={StaticResource BoolToVis}}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <Grid Margin="0,3">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="42" />
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="70" />
+                                            </Grid.ColumnDefinitions>
+                                            <TextBlock Grid.Column="0" Text="{Binding Name}" FontFamily="Consolas" FontSize="11" Foreground="{StaticResource TextBrush}" VerticalAlignment="Center" />
+
+                                            <StackPanel Grid.Column="1" Orientation="Horizontal"
+                                                        Visibility="{Binding DataContext.IsCustomCartesian, RelativeSource={RelativeSource AncestorType=ItemsControl}, Converter={StaticResource BoolToVis}}">
+                                                <TextBox Width="50" Margin="1,0" Text="{Binding XMm}" ToolTip="X (mm)" />
+                                                <TextBox Width="50" Margin="1,0" Text="{Binding YMm}" ToolTip="Y (mm)" />
+                                                <TextBox Width="50" Margin="1,0" Text="{Binding ZMm}" ToolTip="Z (mm)" />
+                                            </StackPanel>
+
+                                            <StackPanel Grid.Column="1" Orientation="Horizontal"
+                                                        Visibility="{Binding DataContext.IsCustomSpherical, RelativeSource={RelativeSource AncestorType=ItemsControl}, Converter={StaticResource BoolToVis}}">
+                                                <TextBox Width="50" Margin="1,0" Text="{Binding AzimuthDeg}" ToolTip="Azimuth (deg)" />
+                                                <TextBox Width="50" Margin="1,0" Text="{Binding ElevationDeg}" ToolTip="Elevation (deg)" />
+                                                <TextBox Width="50" Margin="1,0" Text="{Binding RadiusMm}" ToolTip="Radius (mm)" />
+                                            </StackPanel>
+
                                             <ComboBox Grid.Column="2" ItemsSource="{Binding AvailableChannels}" SelectedItem="{Binding Channel}" />
                                         </Grid>
                                     </DataTemplate>
@@ -193,15 +262,14 @@
                                 </Grid.RowDefinitions>
                                 <TextBlock Grid.Row="0" Grid.Column="0" Text="Window (samples)" Foreground="{StaticResource TextDimBrush}" VerticalAlignment="Center" Margin="0,4" />
                                 <ComboBox Grid.Row="0" Grid.Column="1" Margin="8,4" ItemsSource="{Binding BufferSizeOptions}" SelectedItem="{Binding SelectedBufferSize}" />
-                                <TextBlock Grid.Row="1" Grid.Column="0" Text="fmin (Hz)" Foreground="{StaticResource TextDimBrush}" VerticalAlignment="Center" Margin="0,4" />
-                                <TextBox Grid.Row="1" Grid.Column="1" Margin="8,4" Text="{Binding Fmin}" />
-                                <TextBlock Grid.Row="2" Grid.Column="0" Text="fmax (Hz)" Foreground="{StaticResource TextDimBrush}" VerticalAlignment="Center" Margin="0,4" />
-                                <TextBox Grid.Row="2" Grid.Column="1" Margin="8,4" Text="{Binding Fmax}" />
-                                <TextBlock Grid.Row="3" Grid.Column="0" Text="Refresh (ms)" Foreground="{StaticResource TextDimBrush}" VerticalAlignment="Center" Margin="0,4" />
-                                <TextBox Grid.Row="3" Grid.Column="1" Margin="8,4" Text="{Binding UpdateIntervalMs}" />
+                                <TextBlock Grid.Row="1" Grid.Column="1" Text="{Binding WindowDurationText}" Margin="8,0,0,6" FontSize="12" Foreground="{StaticResource AccentBrush}" />
+                                <TextBlock Grid.Row="2" Grid.Column="0" Text="fmin (Hz)" Foreground="{StaticResource TextDimBrush}" VerticalAlignment="Center" Margin="0,4" />
+                                <TextBox Grid.Row="2" Grid.Column="1" Margin="8,4" Text="{Binding Fmin}" />
+                                <TextBlock Grid.Row="3" Grid.Column="0" Text="fmax (Hz)" Foreground="{StaticResource TextDimBrush}" VerticalAlignment="Center" Margin="0,4" />
+                                <TextBox Grid.Row="3" Grid.Column="1" Margin="8,4" Text="{Binding Fmax}" />
                             </Grid>
                             <TextBlock Margin="0,8,0,0" TextWrapping="Wrap" FontSize="12" Foreground="{StaticResource TextDimBrush}"
-                                       Text="Sliding window: each estimate is computed on the latest Window samples (this sets the max measurable delay &amp; the frequency resolution). Refresh sets how often the plot updates &#8212; with Refresh below Window/fs the analysis windows overlap." />
+                                       Text="Each estimate is computed on one Window's worth of samples (this sets the max measurable delay &amp; the frequency resolution). Updates fire once per Window — no overlap, no gaps." />
                             </StackPanel>
                         </StackPanel>
                     </Border>

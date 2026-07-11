@@ -20,10 +20,9 @@ namespace GccPhat.RealTime.Audio;
 /// mic-array drivers install a voice-processing APO that silences the WASAPI stream outright —
 /// WDM-KS talks straight to the driver, below that APO. See MainViewModel's silence-probe fallback.
 /// </summary>
-public sealed class MultichannelCapture : IDisposable
+public sealed class MultichannelCapture : ICaptureSource
 {
     private const int RingCapacity = 1 << 16; // 65536 samples / channel (~1.3 s at 48 kHz)
-    private static readonly Guid SubtypeIeeeFloat = new("00000003-0000-0010-8000-00aa00389b71");
 
     private readonly ChannelRingBuffer[] _channels;
     private readonly Func<byte[], int, double>? _readSample;
@@ -82,7 +81,7 @@ public sealed class MultichannelCapture : IDisposable
         SampleRate = format.SampleRate;
         _bytesPerSample = format.BitsPerSample / 8;
         _blockAlign = format.BlockAlign;
-        _readSample = BuildSampleReader(format);
+        _readSample = PcmSampleReader.BuildReader(format);
 
         _channels = new ChannelRingBuffer[ChannelCount];
         _scratch = new double[ChannelCount][];
@@ -243,39 +242,6 @@ public sealed class MultichannelCapture : IDisposable
         {
             _scratch[c] = new double[size];
         }
-    }
-
-    private static Func<byte[], int, double> BuildSampleReader(WaveFormat format)
-    {
-        int bits = format.BitsPerSample;
-        bool isFloat = format.Encoding switch
-        {
-            WaveFormatEncoding.IeeeFloat => true,
-            WaveFormatEncoding.Pcm => false,
-            WaveFormatEncoding.Extensible when format is WaveFormatExtensible ext => ext.SubFormat == SubtypeIeeeFloat,
-            _ => throw new NotSupportedException($"Unsupported capture encoding: {format.Encoding}.")
-        };
-
-        if (isFloat && bits == 32)
-        {
-            return static (buf, off) => BitConverter.ToSingle(buf, off);
-        }
-
-        return bits switch
-        {
-            16 => static (buf, off) => BitConverter.ToInt16(buf, off) / 32768.0,
-            24 => static (buf, off) =>
-            {
-                int sample = buf[off] | (buf[off + 1] << 8) | (buf[off + 2] << 16);
-                if ((sample & 0x800000) != 0)
-                {
-                    sample |= unchecked((int)0xFF000000);
-                }
-                return sample / 8388608.0;
-            },
-            32 => static (buf, off) => BitConverter.ToInt32(buf, off) / 2147483648.0,
-            _ => throw new NotSupportedException($"Unsupported capture format: {format.Encoding} {bits}-bit.")
-        };
     }
 
     public void Dispose()

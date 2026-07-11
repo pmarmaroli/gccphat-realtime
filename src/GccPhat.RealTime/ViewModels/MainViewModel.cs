@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Collections.Specialized;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
+using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
 using System.Windows.Threading;
@@ -10,6 +11,8 @@ using GccPhat.Core;
 using GccPhat.RealTime.Analysis;
 using GccPhat.RealTime.Audio;
 using GccPhat.RealTime.Mvvm;
+using GccPhat.RealTime.Presets;
+using NAudio.Wave;
 
 namespace GccPhat.RealTime.ViewModels;
 
@@ -33,7 +36,6 @@ public sealed class MainViewModel : ObservableObject
     private int _selectedBufferSize = 8192;
     private int _fmin = 200;
     private int _fmax = 8000;
-    private int _updateIntervalMs = 50;
     private bool _yAutoScale = true;
     private double _yMin = -5;
     private double _yMax = 5;
@@ -54,6 +56,18 @@ public sealed class MainViewModel : ObservableObject
     private bool _localizationPairsAutoApplied;
     private double _currentLevelDb = double.NegativeInfinity;
     private bool _hasLiveAzimuth;
+    private string _customInputMode = "Cartesian";
+    private bool _micCountLocked;
+    private string _captureMode = "Live";
+    private string? _replayFilePath;
+    private string _replayChannelsDetectedText = "Channels detected: —";
+    private int _replaySampleRate;
+    private WavFileReplayCapture? _activeReplay;
+    private bool _replayEndedNaturally;
+    private string? _selectedPresetName;
+    private string _newPresetName = "";
+
+    private readonly PresetStore _presetStore = new();
 
     public MainViewModel()
     {
@@ -65,17 +79,20 @@ public sealed class MainViewModel : ObservableObject
         AddOppositePairsCommand = new RelayCommand(AddOppositePairs);
         AddConsecutivePairsCommand = new RelayCommand(AddConsecutivePairs);
         AddAllPairsCommand = new RelayCommand(AddAllPairs);
-        ApplyLinearBroadsidePresetCommand = new RelayCommand(ApplyLinearBroadsidePreset);
-        ApplyCircular6CenterPresetCommand = new RelayCommand(ApplyCircular6CenterPreset);
-        StartCommand = new RelayCommand(() => Start(), () => !IsRunning && SelectedDevice is not null);
+        StartCommand = new RelayCommand(() => Start(), () => !IsRunning && (IsLiveMode ? SelectedDevice is not null : ReplayFilePath is not null));
         StopCommand = new RelayCommand(Stop, () => IsRunning);
         ListenCommand = new RelayCommand(() => BeamListening = !BeamListening, () => IsRunning);
+        LoadPresetCommand = new RelayCommand(LoadPreset, () => SelectedPresetName is not null);
+        SavePresetCommand = new RelayCommand(SavePreset, () => !string.IsNullOrWhiteSpace(NewPresetName) || SelectedPresetName is not null);
+        SaveAsPresetCommand = new RelayCommand(SaveAsPreset, () => !string.IsNullOrWhiteSpace(NewPresetName));
+        DeletePresetCommand = new RelayCommand(DeletePreset, () => SelectedPresetName is not null);
 
         ActivePairs.CollectionChanged += OnActivePairsChanged;
         MicPositions.CollectionChanged += OnMicPositionsChanged;
 
         RefreshDevices();
         RebuildPositions();
+        RefreshPresetNames();
         Engine.SetBeamformingMode(ParseBeamformerMode(_selectedBeamformerMode));
         Engine.SetLevelThresholdDb(_levelThresholdDb);
         NotifyToolStateChanged();
@@ -111,24 +128,124 @@ public sealed class MainViewModel : ObservableObject
     public ObservableCollection<PairViewModel> ActivePairs { get; } = new();
     public ObservableCollection<MicGeometryViewModel> MicPositions { get; } = new();
     public int[] BufferSizeOptions { get; } = { 1024, 2048, 4096, 8192, 16384, 32768 };
-    public string[] LayoutOptions { get; } = { "Circular", "Linear" };
+    public string[] LayoutOptions { get; } = { "Circular", "Linear", "Custom" };
+    public ObservableCollection<string> PresetNames { get; } = new();
+
+    public string[] QuickPresetOptions { get; } =
+    {
+        "Quick preset…",
+        "4-mic linear, 4 cm (broadside)",
+        "6-mic circular, 8 cm + center"
+    };
+
+    /// <summary>Applies the selected quick preset, then resets the picker back to the placeholder
+    /// (this is a one-shot action menu, not a persistent selection).</summary>
+    public string SelectedQuickPreset
+    {
+        get => QuickPresetOptions[0];
+        set
+        {
+            switch (value)
+            {
+                case "4-mic linear, 4 cm (broadside)":
+                    ApplyLinearBroadsidePreset();
+                    break;
+                case "6-mic circular, 8 cm + center":
+                    ApplyCircular6CenterPreset();
+                    break;
+            }
+            OnPropertyChanged(nameof(SelectedQuickPreset));
+        }
+    }
 
     public string SelectedLayout
     {
         get => _selectedLayout;
-        set { if (SetProperty(ref _selectedLayout, value)) { OnPropertyChanged(nameof(IsCircular)); OnPropertyChanged(nameof(IsLinear)); RebuildPositions(); } }
+        set
+        {
+            if (SetProperty(ref _selectedLayout, value))
+            {
+                OnPropertyChanged(nameof(IsCircular));
+                OnPropertyChanged(nameof(IsLinear));
+                OnPropertyChanged(nameof(IsCustom));
+                OnPropertyChanged(nameof(IsNotCustom));
+                RebuildPositions();
+            }
+        }
     }
 
     public bool IsCircular => _selectedLayout == "Circular";
     public bool IsLinear => _selectedLayout == "Linear";
+    public bool IsCustom => _selectedLayout == "Custom";
+    public bool IsNotCustom => !IsCustom;
+
+    /// <summary>Array-wide coordinate entry mode for the Custom layout ("Cartesian" or "Spherical").
+    /// Switching mode re-derives each position's other representation so no data is lost.</summary>
+    public string CustomInputMode
+    {
+        get => _customInputMode;
+        set
+        {
+            if (SetProperty(ref _customInputMode, value))
+            {
+                foreach (MicGeometryViewModel pos in MicPositions)
+                {
+                    if (_customInputMode == "Spherical")
+                    {
+                        pos.ApplyCartesian(); // refresh Az/El/R display from the current X/Y/Z
+                    }
+                    else
+                    {
+                        pos.ApplySpherical(); // recompute X/Y/Z from the entered Az/El/R
+                    }
+                }
+                OnPropertyChanged(nameof(IsCustomCartesian));
+                OnPropertyChanged(nameof(IsCustomSpherical));
+            }
+        }
+    }
+
+    public bool IsCustomCartesian
+    {
+        get => _customInputMode == "Cartesian";
+        set { if (value) CustomInputMode = "Cartesian"; }
+    }
+
+    public bool IsCustomSpherical
+    {
+        get => _customInputMode == "Spherical";
+        set { if (value) CustomInputMode = "Spherical"; }
+    }
+
+    /// <summary>True while a replay file is loaded — locks <see cref="MicCount"/> to the file's channel count.</summary>
+    public bool MicCountLocked
+    {
+        get => _micCountLocked;
+        private set { if (SetProperty(ref _micCountLocked, value)) OnPropertyChanged(nameof(CanEditMicCount)); }
+    }
+
+    public bool CanEditMicCount => CanEditConfig && !_micCountLocked;
 
     /// <summary>True when the current mic positions are collinear (all Y equal), which makes a
     /// source and its mirror image across the array line indistinguishable (front/back ambiguity).</summary>
     public bool HasFrontBackAmbiguity
     {
         get => _hasFrontBackAmbiguity;
-        private set => SetProperty(ref _hasFrontBackAmbiguity, value);
+        private set
+        {
+            if (SetProperty(ref _hasFrontBackAmbiguity, value))
+            {
+                OnPropertyChanged(nameof(MinLocalizationPairs));
+                OnPropertyChanged(nameof(LocalizationToolRequirementsText));
+            }
+        }
     }
+
+    /// <summary>Fewest channel pairs SRP-PHAT needs to produce an azimuth. Normally 2 (two baselines
+    /// resolve the front/back mirror ambiguity); relaxed to 1 for a collinear array, where
+    /// <see cref="GccPhat.Core.SrpPhatLocalizer"/> already restricts the search to the front
+    /// hemisphere and a single pair is enough for that ambiguous-but-usable estimate.</summary>
+    public int MinLocalizationPairs => HasFrontBackAmbiguity ? 1 : 2;
 
     public int MicCount
     {
@@ -290,7 +407,23 @@ public sealed class MainViewModel : ObservableObject
             string mode = ParseBeamformerMode(_selectedBeamformerMode) == BeamformerMode.DifferentialAuto
                 ? "Mode: auto-order differential."
                 : "Mode: delay-and-sum.";
-            return $"{mode} Processing block: {SelectedBufferSize} samples (~{blockMs:F1} ms at {sampleRate} Hz), using the Analysis window. Refresh cadence: {UpdateIntervalMs} ms.";
+            return $"{mode} Processing block: {SelectedBufferSize} samples (~{blockMs:F1} ms at {sampleRate} Hz), using the Analysis window. Estimates update once per window.";
+        }
+    }
+
+    /// <summary>Analysis window duration in milliseconds, from the sample rate of whichever source
+    /// (live device or replay file) is currently selected.</summary>
+    public string WindowDurationText
+    {
+        get
+        {
+            int sampleRate = IsFileMode ? _replaySampleRate : (SelectedDevice?.SampleRate ?? 0);
+            if (sampleRate <= 0)
+            {
+                return "Window duration: select a device or file first.";
+            }
+            double ms = SelectedBufferSize * 1000.0 / sampleRate;
+            return $"Window duration: {ms:F1} ms @ {sampleRate} Hz";
         }
     }
 
@@ -303,7 +436,8 @@ public sealed class MainViewModel : ObservableObject
                 ? "Ready now."
                 : "Ready after you press START.";
 
-    public string LocalizationToolRequirementsText => "Needs: geometry mapped to unique capture channels, at least 2 mapped channel pairs, then START.";
+    public string LocalizationToolRequirementsText
+        => $"Needs: geometry mapped to unique capture channels, at least {MinLocalizationPairs} mapped channel pair{Pluralize(MinLocalizationPairs)}, then START.";
 
     public string LocalizationToolStatusText
     {
@@ -315,18 +449,18 @@ public sealed class MainViewModel : ObservableObject
             }
 
             int eligiblePairs = GetEligibleLocalizationPairCount();
-            if (eligiblePairs < 2)
+            int minPairs = MinLocalizationPairs;
+            if (eligiblePairs < minPairs)
             {
-                return eligiblePairs == 1
-                    ? "Missing: add 1 more mapped channel pair."
-                    : "Missing: add at least 2 mapped channel pairs.";
+                int missing = minPairs - eligiblePairs;
+                return $"Missing: add {missing} more mapped channel pair{Pluralize(missing)}.";
             }
 
             return IsRunning ? "Ready now." : "Ready after you press START.";
         }
     }
 
-    public bool CanLocalizeWithCurrentPairs => HasValidSpatialGeometry && GetEligibleLocalizationPairCount() >= 2;
+    public bool CanLocalizeWithCurrentPairs => HasValidSpatialGeometry && GetEligibleLocalizationPairCount() >= MinLocalizationPairs;
     public bool HasVisibleLocalizationAzimuth => IsRunning && IsAboveThreshold && CanLocalizeWithCurrentPairs && _hasLiveAzimuth;
 
     /// <summary>True while the currently configured pairs are exactly the ones <see cref="TryAutoApplyDefaultLocalizationPairs"/> seeded — cleared as soon as the user adds/removes a pair.</summary>
@@ -375,9 +509,10 @@ public sealed class MainViewModel : ObservableObject
     {
         get
         {
+            int minPairs = MinLocalizationPairs;
             if (ActivePairs.Count == 0)
             {
-                return "Add at least 2 mapped pairs to start localization.";
+                return $"Add at least {minPairs} mapped pair{Pluralize(minPairs)} to start localization.";
             }
 
             int eligiblePairs = GetEligibleLocalizationPairCount();
@@ -386,10 +521,10 @@ public sealed class MainViewModel : ObservableObject
                 return $"Finish geometry setup first: {GeometryIssueText}.";
             }
 
-            if (eligiblePairs < 2)
+            if (eligiblePairs < minPairs)
             {
-                int missingPairs = 2 - eligiblePairs;
-                return $"SRP-PHAT starts when at least 2 pairs are ready ({missingPairs} more needed).";
+                int missingPairs = minPairs - eligiblePairs;
+                return $"SRP-PHAT starts when at least {minPairs} pair{Pluralize(minPairs)} are ready ({missingPairs} more needed).";
             }
 
             int ignoredPairs = ActivePairs.Count - eligiblePairs;
@@ -433,11 +568,42 @@ public sealed class MainViewModel : ObservableObject
     public RelayCommand AddOppositePairsCommand { get; }
     public RelayCommand AddConsecutivePairsCommand { get; }
     public RelayCommand AddAllPairsCommand { get; }
-    public RelayCommand ApplyLinearBroadsidePresetCommand { get; }
-    public RelayCommand ApplyCircular6CenterPresetCommand { get; }
     public RelayCommand StartCommand { get; }
     public RelayCommand StopCommand { get; }
     public RelayCommand ListenCommand { get; }
+    public RelayCommand LoadPresetCommand { get; }
+    public RelayCommand SavePresetCommand { get; }
+    public RelayCommand SaveAsPresetCommand { get; }
+    public RelayCommand DeletePresetCommand { get; }
+
+    /// <summary>Name of the preset selected in the presets list, used by Load/Save/Delete.</summary>
+    public string? SelectedPresetName
+    {
+        get => _selectedPresetName;
+        set
+        {
+            if (SetProperty(ref _selectedPresetName, value))
+            {
+                LoadPresetCommand.RaiseCanExecuteChanged();
+                SavePresetCommand.RaiseCanExecuteChanged();
+                DeletePresetCommand.RaiseCanExecuteChanged();
+            }
+        }
+    }
+
+    /// <summary>Name typed for saving a new preset (Save As always uses this).</summary>
+    public string NewPresetName
+    {
+        get => _newPresetName;
+        set
+        {
+            if (SetProperty(ref _newPresetName, value))
+            {
+                SavePresetCommand.RaiseCanExecuteChanged();
+                SaveAsPresetCommand.RaiseCanExecuteChanged();
+            }
+        }
+    }
 
     public AudioDeviceInfo? SelectedDevice
     {
@@ -449,6 +615,7 @@ public sealed class MainViewModel : ObservableObject
                 UpdateDeviceClaim();
                 RebuildChannelList();
                 OnPropertyChanged(nameof(BeamProcessingText));
+                OnPropertyChanged(nameof(WindowDurationText));
                 OnPropertyChanged(nameof(SessionLabel));
                 RaiseCommandStates();
             }
@@ -457,6 +624,91 @@ public sealed class MainViewModel : ObservableObject
 
     /// <summary>Human-readable label for this session, used by the combined-localization window's session pickers.</summary>
     public string SessionLabel => SelectedDevice?.Name ?? "(no device selected)";
+
+    /// <summary>"Live" (a capture device) or "File" (replaying a WAV file).</summary>
+    public string CaptureMode
+    {
+        get => _captureMode;
+        set
+        {
+            if (SetProperty(ref _captureMode, value))
+            {
+                if (_captureMode == "Live")
+                {
+                    MicCountLocked = false;
+                }
+                OnPropertyChanged(nameof(IsLiveMode));
+                OnPropertyChanged(nameof(IsFileMode));
+                OnPropertyChanged(nameof(WindowDurationText));
+                RaiseCommandStates();
+            }
+        }
+    }
+
+    public bool IsLiveMode
+    {
+        get => _captureMode == "Live";
+        set { if (value) CaptureMode = "Live"; }
+    }
+
+    public bool IsFileMode
+    {
+        get => _captureMode == "File";
+        set { if (value) CaptureMode = "File"; }
+    }
+
+    public string? ReplayFilePath
+    {
+        get => _replayFilePath;
+        private set
+        {
+            if (SetProperty(ref _replayFilePath, value))
+            {
+                OnPropertyChanged(nameof(ReplayFileLabel));
+                RaiseCommandStates();
+            }
+        }
+    }
+
+    public string ReplayFileLabel => ReplayFilePath is null ? "No file selected." : Path.GetFileName(ReplayFilePath);
+
+    public string ReplayChannelsDetectedText
+    {
+        get => _replayChannelsDetectedText;
+        private set => SetProperty(ref _replayChannelsDetectedText, value);
+    }
+
+    /// <summary>Raised when a replay reaches end-of-file on its own (not a user-initiated Stop). The
+    /// subscriber (MainWindow) must marshal to the UI thread and call Stop().</summary>
+    public event EventHandler? ReplayFinished;
+
+    /// <summary>Called from code-behind after the user picks a WAV file via the file dialog.</summary>
+    public void LoadReplayFile(string path)
+    {
+        try
+        {
+            using var probe = new WaveFileReader(path);
+            int channels = probe.WaveFormat.Channels;
+            _replaySampleRate = probe.WaveFormat.SampleRate;
+
+            ReplayFilePath = path;
+            ReplayChannelsDetectedText = $"Channels detected: {channels}";
+            SelectedLayout = "Custom";
+            MicCount = channels;
+            MicCountLocked = true;
+            OnPropertyChanged(nameof(WindowDurationText));
+            StatusText = $"Loaded \"{Path.GetFileName(path)}\" — {channels} channel(s). "
+                       + $"Set {channels} microphone position(s) in GEOMETRY, then START.";
+        }
+        catch (Exception ex)
+        {
+            ReplayFilePath = null;
+            ReplayChannelsDetectedText = "Channels detected: —";
+            _replaySampleRate = 0;
+            OnPropertyChanged(nameof(WindowDurationText));
+            StatusText = $"Failed to read WAV file: {ex.Message}";
+        }
+    }
 
     public RenderDeviceInfo? SelectedRenderDevice
     {
@@ -492,6 +744,7 @@ public sealed class MainViewModel : ObservableObject
             if (SetProperty(ref _selectedBufferSize, value))
             {
                 OnPropertyChanged(nameof(BeamProcessingText));
+                OnPropertyChanged(nameof(WindowDurationText));
             }
         }
     }
@@ -506,18 +759,6 @@ public sealed class MainViewModel : ObservableObject
     {
         get => _fmax;
         set => SetProperty(ref _fmax, value);
-    }
-
-    public int UpdateIntervalMs
-    {
-        get => _updateIntervalMs;
-        set
-        {
-            if (SetProperty(ref _updateIntervalMs, value))
-            {
-                OnPropertyChanged(nameof(BeamProcessingText));
-            }
-        }
     }
 
     public bool YAutoScale
@@ -568,6 +809,7 @@ public sealed class MainViewModel : ObservableObject
             if (SetProperty(ref _isRunning, value))
             {
                 OnPropertyChanged(nameof(CanEditConfig));
+                OnPropertyChanged(nameof(CanEditMicCount));
                 OnPropertyChanged(nameof(BeamWorkflowText));
                 OnPropertyChanged(nameof(HasVisibleLocalizationAzimuth));
                 RaiseCommandStates();
@@ -872,38 +1114,159 @@ public sealed class MainViewModel : ObservableObject
         HasCenterMic = true;
     }
 
+    private void RefreshPresetNames()
+    {
+        PresetNames.Clear();
+        foreach (string name in _presetStore.ListPresetNames())
+        {
+            PresetNames.Add(name);
+        }
+    }
+
+    private void LoadPreset()
+    {
+        if (SelectedPresetName is null)
+        {
+            return;
+        }
+        ArrayGeometryPreset? preset = _presetStore.Load(SelectedPresetName);
+        if (preset is null)
+        {
+            StatusText = $"Failed to load preset \"{SelectedPresetName}\".";
+            return;
+        }
+
+        DetachGeometryPositionHandlers();
+
+        _diameterCm = preset.DiameterCm;
+        _spacingCm = preset.SpacingCm;
+        _hasCenterMic = preset.HasCenterMic;
+        _customInputMode = preset.CustomInputMode;
+        _micCount = preset.MicCount;
+        _selectedLayout = preset.Layout;
+        OnPropertyChanged(nameof(DiameterCm));
+        OnPropertyChanged(nameof(SpacingCm));
+        OnPropertyChanged(nameof(HasCenterMic));
+        OnPropertyChanged(nameof(CustomInputMode));
+        OnPropertyChanged(nameof(IsCustomCartesian));
+        OnPropertyChanged(nameof(IsCustomSpherical));
+        OnPropertyChanged(nameof(MicCount));
+        OnPropertyChanged(nameof(SelectedLayout));
+        OnPropertyChanged(nameof(IsCircular));
+        OnPropertyChanged(nameof(IsLinear));
+        OnPropertyChanged(nameof(IsCustom));
+
+        MicPositions.Clear();
+        foreach (MicPositionEntry entry in preset.Positions)
+        {
+            var pos = new MicGeometryViewModel(entry.PositionIndex, entry.X, entry.Y, AvailableChannels, z: entry.Z)
+            {
+                Channel = entry.Channel,
+                IncludeInBeam = entry.IncludeInBeam
+            };
+            MicPositions.Add(pos);
+        }
+
+        HasFrontBackAmbiguity = MicPositions.Count >= 2 && MicPositions.Max(p => p.Y) - MicPositions.Min(p => p.Y) < 1e-9;
+        AttachGeometryPositionHandlers();
+        SyncBeamChannels();
+        UpdateBeamBand();
+        UpdateBeamPattern();
+        UpdateDelayAxisRange();
+        NotifyToolStateChanged();
+        StatusText = $"Loaded preset \"{preset.Name}\".";
+    }
+
+    private void SavePreset() => SaveGeometryPreset(SelectedPresetName ?? NewPresetName);
+
+    private void SaveAsPreset() => SaveGeometryPreset(NewPresetName);
+
+    private void SaveGeometryPreset(string name)
+    {
+        if (string.IsNullOrWhiteSpace(name))
+        {
+            StatusText = "Enter a preset name first.";
+            return;
+        }
+
+        var preset = new ArrayGeometryPreset(
+            name,
+            SelectedLayout,
+            MicCount,
+            DiameterCm,
+            SpacingCm,
+            HasCenterMic,
+            CustomInputMode,
+            MicPositions.Select(p => new MicPositionEntry(p.PositionIndex, p.X, p.Y, p.Z, p.Channel, p.IncludeInBeam)).ToList());
+
+        _presetStore.Save(preset);
+        RefreshPresetNames();
+        SelectedPresetName = name;
+        NewPresetName = "";
+        StatusText = $"Saved preset \"{name}\".";
+    }
+
+    private void DeletePreset()
+    {
+        if (SelectedPresetName is null)
+        {
+            return;
+        }
+        string name = SelectedPresetName;
+        _presetStore.Delete(name);
+        RefreshPresetNames();
+        SelectedPresetName = null;
+        StatusText = $"Deleted preset \"{name}\".";
+    }
+
     // Recomputes mic positions (metres) from the selected array layout and its parameters.
     private void RebuildPositions()
     {
         DetachGeometryPositionHandlers();
         int n = Math.Clamp(_micCount, 2, 64);
-        MicPositions.Clear();
-        if (IsCircular)
+        if (IsCustom)
         {
-            double r = _diameterCm / 100.0 / 2.0;
-            for (int i = 0; i < n; i++)
+            // User-entered positions — resize to n entries without discarding existing coordinates.
+            while (MicPositions.Count > n)
             {
-                double a = 2.0 * Math.PI * i / n;
-                MicPositions.Add(new MicGeometryViewModel(i, r * Math.Cos(a), r * Math.Sin(a), AvailableChannels));
+                MicPositions.RemoveAt(MicPositions.Count - 1);
             }
-            if (_hasCenterMic)
+            while (MicPositions.Count < n)
             {
-                MicPositions.Add(new MicGeometryViewModel(n, 0.0, 0.0, AvailableChannels, "Center"));
+                MicPositions.Add(new MicGeometryViewModel(MicPositions.Count, 0.0, 0.0, AvailableChannels));
             }
         }
         else
         {
-            double d = _spacingCm / 100.0;
-            double x0 = -(n - 1) * d / 2.0;
-            for (int i = 0; i < n; i++)
+            MicPositions.Clear();
+            if (IsCircular)
             {
-                MicPositions.Add(new MicGeometryViewModel(i, x0 + i * d, 0.0, AvailableChannels));
+                double r = _diameterCm / 100.0 / 2.0;
+                for (int i = 0; i < n; i++)
+                {
+                    double a = 2.0 * Math.PI * i / n;
+                    MicPositions.Add(new MicGeometryViewModel(i, r * Math.Cos(a), r * Math.Sin(a), AvailableChannels));
+                }
+                if (_hasCenterMic)
+                {
+                    MicPositions.Add(new MicGeometryViewModel(n, 0.0, 0.0, AvailableChannels, "Center"));
+                }
+            }
+            else
+            {
+                double d = _spacingCm / 100.0;
+                double x0 = -(n - 1) * d / 2.0;
+                for (int i = 0; i < n; i++)
+                {
+                    MicPositions.Add(new MicGeometryViewModel(i, x0 + i * d, 0.0, AvailableChannels));
+                }
             }
         }
         HasFrontBackAmbiguity = MicPositions.Count >= 2 && MicPositions.Max(p => p.Y) - MicPositions.Min(p => p.Y) < 1e-9;
         AttachGeometryPositionHandlers();
         UpdateBeamBand();
         UpdateBeamPattern();
+        UpdateDelayAxisRange();
         NotifyToolStateChanged();
     }
 
@@ -1001,6 +1364,47 @@ public sealed class MainViewModel : ObservableObject
         double fHigh = speed / (2.0 * dMin);
         Engine.SetBeamBand(fLow, fHigh);
         BeamBandText = $"Useful band: {fLow:F0}–{fHigh:F0} Hz  (aperture {dMax * 100:F1} cm, min spacing {dMin * 100:F1} cm)";
+    }
+
+    /// <summary>
+    /// Sets the default delay-view Y-axis range to 1.1x the maximum possible propagation delay
+    /// (biggest pair aperture in the array / speed of sound), so the plot's manual range always
+    /// starts sized to what the geometry can actually produce. Recomputed on every geometry change;
+    /// only affects the manual min/max used while Auto-scale is unchecked.
+    /// </summary>
+    private void UpdateDelayAxisRange()
+    {
+        const double speed = 343.0; // m/s
+
+        if (MicPositions.Count < 2)
+        {
+            return;
+        }
+
+        double dMax = 0.0;
+        for (int i = 0; i < MicPositions.Count; i++)
+        {
+            for (int j = i + 1; j < MicPositions.Count; j++)
+            {
+                double dx = MicPositions[i].X - MicPositions[j].X;
+                double dy = MicPositions[i].Y - MicPositions[j].Y;
+                double dz = MicPositions[i].Z - MicPositions[j].Z;
+                double dist = Math.Sqrt(dx * dx + dy * dy + dz * dz);
+                if (dist > dMax)
+                {
+                    dMax = dist;
+                }
+            }
+        }
+
+        if (dMax <= 0)
+        {
+            return;
+        }
+
+        double maxDelayMs = dMax / speed * 1000.0;
+        YMax = Math.Round(maxDelayMs * 1.1, 2);
+        YMin = -YMax;
     }
 
     /// <summary>
@@ -1237,6 +1641,12 @@ public sealed class MainViewModel : ObservableObject
 
     private void Start(bool isRetry = false, bool forcePortAudio = false)
     {
+        if (IsFileMode)
+        {
+            StartFileReplay();
+            return;
+        }
+
         if (SelectedDevice is null)
         {
             return;
@@ -1247,23 +1657,8 @@ public sealed class MainViewModel : ObservableObject
         try
         {
             var capture = new MultichannelCapture(SelectedDevice, forcePortAudio);
+            StartWithCapture(capture, $"Running on \"{SelectedDevice.Name}\"");
 
-            int nyquist = capture.SampleRate / 2;
-            int fmax = Math.Min(Fmax, nyquist);
-            if (fmax != Fmax)
-            {
-                Fmax = fmax;
-            }
-
-            Engine.Configure(SelectedBufferSize, Fmin, fmax, UpdateIntervalMs);
-            SyncEnginePairs();
-            SyncEngineGeometry();
-            SyncBeamChannels();
-            Engine.Start(capture);
-
-            IsRunning = true;
-            StatusText = $"Running on \"{SelectedDevice.Name}\" — {capture.ChannelCount} ch @ {capture.SampleRate} Hz, "
-                       + $"window {SelectedBufferSize}, band {Fmin}\u2013{fmax} Hz.";
             if (forcePortAudio)
             {
                 StatusText = "(WDM-KS) " + StatusText;
@@ -1288,6 +1683,67 @@ public sealed class MainViewModel : ObservableObject
                 : string.Empty;
             StatusText = $"Failed to start capture: {ex.Message}.{hint}";
         }
+    }
+
+    private void StartFileReplay()
+    {
+        if (ReplayFilePath is null)
+        {
+            StatusText = "Choose a WAV file first.";
+            return;
+        }
+
+        WavFileReplayCapture? capture = null;
+        try
+        {
+            capture = new WavFileReplayCapture(ReplayFilePath);
+            if (capture.ChannelCount != MicPositions.Count)
+            {
+                StatusText = $"File has {capture.ChannelCount} channel(s) but geometry has {MicPositions.Count} position(s) - mismatch.";
+                capture.Dispose();
+                return;
+            }
+
+            _activeReplay = capture;
+            capture.PlaybackFinished += OnReplayPlaybackFinished;
+            StartWithCapture(capture, $"Replaying \"{Path.GetFileName(ReplayFilePath)}\"");
+        }
+        catch (Exception ex)
+        {
+            capture?.Dispose();
+            IsRunning = false;
+            StatusText = $"Failed to start replay: {ex.Message}";
+        }
+    }
+
+    // Shared Start() tail for both live capture and file replay - both are ICaptureSource, so the
+    // engine configuration/wiring is identical regardless of where the audio comes from.
+    private void StartWithCapture(ICaptureSource capture, string statusPrefix)
+    {
+        int nyquist = capture.SampleRate / 2;
+        int fmax = Math.Min(Fmax, nyquist);
+        if (fmax != Fmax)
+        {
+            Fmax = fmax;
+        }
+
+        Engine.Configure(SelectedBufferSize, Fmin, fmax);
+        SyncEnginePairs();
+        SyncEngineGeometry();
+        SyncBeamChannels();
+        Engine.Start(capture);
+
+        IsRunning = true;
+        StatusText = $"{statusPrefix} - {capture.ChannelCount} ch @ {capture.SampleRate} Hz, "
+                   + $"window {SelectedBufferSize}, band {Fmin}-{fmax} Hz.";
+    }
+
+    // Raised on the replay pump thread when the file runs out on its own. MainWindow marshals to
+    // the UI thread and calls Stop() - never call Stop() directly from here.
+    private void OnReplayPlaybackFinished()
+    {
+        _replayEndedNaturally = true;
+        ReplayFinished?.Invoke(this, EventArgs.Empty);
     }
 
     /// <summary>
@@ -1378,6 +1834,11 @@ public sealed class MainViewModel : ObservableObject
     private void Stop()
     {
         Engine.Stop();
+        if (_activeReplay is not null)
+        {
+            _activeReplay.PlaybackFinished -= OnReplayPlaybackFinished;
+            _activeReplay = null;
+        }
         BeamListening = false;
         IsRunning = false;
         foreach (PairViewModel pair in ActivePairs)
@@ -1396,7 +1857,8 @@ public sealed class MainViewModel : ObservableObject
         HemispherePowers = null;
         _hasLiveAzimuth = false;
         OnPropertyChanged(nameof(HasVisibleLocalizationAzimuth));
-        StatusText = "Stopped.";
+        StatusText = _replayEndedNaturally ? "Replay finished." : "Stopped.";
+        _replayEndedNaturally = false;
     }
 
     /// <summary>Called on the UI thread to refresh per-pair readouts from the latest results.</summary>
@@ -1509,7 +1971,8 @@ public sealed class MainViewModel : ObservableObject
         HashSet<int> availableChannels = AvailableChannels.ToHashSet();
         HashSet<int> mappedChannels = GetMappedGeometryChannels(availableChannels);
         int eligiblePairs = GetEligibleLocalizationPairCount(availableChannels, mappedChannels);
-        int missingPairs = Math.Max(0, 2 - eligiblePairs);
+        int minPairs = MinLocalizationPairs;
+        int missingPairs = Math.Max(0, minPairs - eligiblePairs);
         var seenBaselines = new Dictionary<(int A, int B), string>();
 
         foreach (PairViewModel pair in ActivePairs)
@@ -1550,7 +2013,7 @@ public sealed class MainViewModel : ObservableObject
                 continue;
             }
 
-            if (eligiblePairs < 2)
+            if (eligiblePairs < minPairs)
             {
                 pair.SetLocalizationState(LocalizationPairState.Waiting,
                     missingPairs == 1
@@ -1579,7 +2042,7 @@ public sealed class MainViewModel : ObservableObject
             .Count();
 
     private int GetUsedLocalizationPairCount(int eligiblePairs)
-        => HasValidSpatialGeometry && eligiblePairs >= 2
+        => HasValidSpatialGeometry && eligiblePairs >= MinLocalizationPairs
             ? eligiblePairs
             : 0;
 
@@ -1640,6 +2103,12 @@ public sealed class MainViewModel : ObservableObject
             SyncBeamChannels();
             OnPropertyChanged(nameof(BeamModeStatusText));
             UpdateBeamPattern();
+        }
+        else if (e.PropertyName is nameof(MicGeometryViewModel.X) or nameof(MicGeometryViewModel.Y) or nameof(MicGeometryViewModel.Z))
+        {
+            HasFrontBackAmbiguity = MicPositions.Count >= 2 && MicPositions.Max(p => p.Y) - MicPositions.Min(p => p.Y) < 1e-9;
+            UpdateBeamPattern();
+            UpdateDelayAxisRange();
         }
     }
 

@@ -22,14 +22,13 @@ public sealed class RealTimeEngine : IDisposable
     private readonly object _gate = new();
     private readonly Stopwatch _clock = new();
 
-    private MultichannelCapture? _capture;
+    private ICaptureSource? _capture;
     private Timer? _timer;
     private int _busy;
 
     private int _bufferSize = 4096;
     private int _fmin = 200;
     private int _fmax = 8000;
-    private int _updateIntervalMs = 50;
 
     private ChannelPair[] _pairs = Array.Empty<ChannelPair>();
     private readonly Dictionary<ChannelPair, GccPhatAnalyzer> _analyzers = new();
@@ -103,7 +102,7 @@ public sealed class RealTimeEngine : IDisposable
     /// </summary>
     public bool TryCopyLatestChannel(int channel, double[] dest)
     {
-        MultichannelCapture? capture;
+        ICaptureSource? capture;
         lock (_gate) { capture = _capture; }
         if (capture is null || channel < 0 || channel >= capture.ChannelCount)
         {
@@ -112,14 +111,13 @@ public sealed class RealTimeEngine : IDisposable
         return capture.GetChannel(channel).CopyLatest(dest);
     }
 
-    public void Configure(int bufferSize, int fmin, int fmax, int updateIntervalMs)
+    public void Configure(int bufferSize, int fmin, int fmax)
     {
         lock (_gate)
         {
             _bufferSize = bufferSize;
             _fmin = fmin;
             _fmax = fmax;
-            _updateIntervalMs = updateIntervalMs;
             _frameA = new double[bufferSize];
             _frameB = new double[bufferSize];
             _analyzers.Clear();
@@ -168,7 +166,7 @@ public sealed class RealTimeEngine : IDisposable
         _localizer = null;
         _srpCorr = Array.Empty<double[]>();
         _localizerPairIndices = Array.Empty<int>();
-        if (_pairs.Length < 2 || _micX.Length < 2 || _micX.Length != _micY.Length)
+        if (_pairs.Length < 1 || _micX.Length < 2 || _micX.Length != _micY.Length)
         {
             return;
         }
@@ -198,13 +196,25 @@ public sealed class RealTimeEngine : IDisposable
             pairIndices.Add(i);
         }
 
-        if (srpPairs.Count < 2)
+        if (srpPairs.Count < 1)
         {
             return;
         }
 
         int fs = _capture?.SampleRate ?? 48000;
-        _localizer = new SrpPhatLocalizer(_micX, _micY, srpPairs.ToArray(), fs);
+        var localizer = new SrpPhatLocalizer(_micX, _micY, srpPairs.ToArray(), fs);
+
+        // A single pair only yields a usable estimate when the array is collinear: the localizer
+        // then restricts its search to the front hemisphere, resolving the mirror ambiguity the
+        // same way the UI's front/back ambiguity handling does. For 2+ pairs, or a non-collinear
+        // array reduced to just 1 pair, don't build a localizer — the result would be an unflagged
+        // coin-flip between two mirror-symmetric directions.
+        if (srpPairs.Count < 2 && !localizer.HasFrontBackAmbiguity)
+        {
+            return;
+        }
+
+        _localizer = localizer;
         _localizerPairIndices = pairIndices.ToArray();
         _srpCorr = new double[srpPairs.Count][];
         for (int i = 0; i < srpPairs.Count; i++)
@@ -213,7 +223,7 @@ public sealed class RealTimeEngine : IDisposable
         }
     }
 
-    public void Start(MultichannelCapture capture)
+    public void Start(ICaptureSource capture)
     {
         lock (_gate)
         {
@@ -235,7 +245,10 @@ public sealed class RealTimeEngine : IDisposable
                 }
             }
 
-            _timer = new Timer(OnTick, null, _updateIntervalMs, _updateIntervalMs);
+            // Tick once per window's worth of audio, so each estimate is a fresh, essentially
+            // non-overlapping block rather than a sliding read at an independently-chosen cadence.
+            int intervalMs = Math.Max(1, (int)Math.Round(_bufferSize * 1000.0 / capture.SampleRate));
+            _timer = new Timer(OnTick, null, intervalMs, intervalMs);
             IsRunning = true;
         }
 
@@ -303,7 +316,7 @@ public sealed class RealTimeEngine : IDisposable
 
     private List<PairResult>? AnalyzeOnce()
     {
-        MultichannelCapture capture;
+        ICaptureSource capture;
         ChannelPair[] pairs;
         int bufferSize, fs, fmin, fmax;
         double[] frameA, frameB;
@@ -337,7 +350,7 @@ public sealed class RealTimeEngine : IDisposable
         var results = new List<PairResult>(pairs.Length);
         bool srpUsable = localizer is not null
                          && srpCorr.Length == localizerPairIndices.Length
-                         && localizerPairIndices.Length >= 2;
+                         && localizerPairIndices.Length >= 1;
         int srpPairSlot = 0;
 
         for (int i = 0; i < pairs.Length; i++)
@@ -533,7 +546,7 @@ public sealed class RealTimeEngine : IDisposable
 
     private double[] PublishChannelLevels()
     {
-        MultichannelCapture? capture;
+        ICaptureSource? capture;
         lock (_gate)
         {
             capture = _capture;
@@ -733,7 +746,7 @@ public sealed class RealTimeEngine : IDisposable
 
             YamNetClassifier? classifier;
             int channel;
-            MultichannelCapture? capture;
+            ICaptureSource? capture;
             int sampleRate;
             lock (_gate)
             {
@@ -781,8 +794,7 @@ public sealed class RealTimeEngine : IDisposable
 
         var waveFormat = WaveFormat.CreateIeeeFloatWaveFormat(sampleRate, 1);
         int blockMs = Math.Max(1, (int)Math.Ceiling(_bufferSize * 1000.0 / sampleRate));
-        int latencyMs = Math.Max(_updateIntervalMs, blockMs);
-        int bufferMs = Math.Max(latencyMs * 4, blockMs * 2);
+        int bufferMs = blockMs * 4;
 
         _bufferedProvider = new BufferedWaveProvider(waveFormat)
         {
@@ -792,8 +804,8 @@ public sealed class RealTimeEngine : IDisposable
 
         MMDevice? device = _renderDevice?.Device;
         _waveOut = device is null
-            ? new WasapiOut(AudioClientShareMode.Shared, true, latencyMs)
-            : new WasapiOut(device, AudioClientShareMode.Shared, true, latencyMs);
+            ? new WasapiOut(AudioClientShareMode.Shared, true, blockMs)
+            : new WasapiOut(device, AudioClientShareMode.Shared, true, blockMs);
         _waveOut.Init(_bufferedProvider);
         _waveOut.Play();
     }

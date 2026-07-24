@@ -1,7 +1,11 @@
 <Solution>
   <Folder Name="/src/">
     <Project Path="src/GccPhat.Core/GccPhat.Core.csproj" />
+    <Project Path="src/GccPhat.RealTime.Shared/GccPhat.RealTime.Shared.csproj" />
+    <Project Path="src/GccPhat.RealTime.Audio.PortAudio/GccPhat.RealTime.Audio.PortAudio.csproj" />
+    <Project Path="src/GccPhat.RealTime.Audio.Windows/GccPhat.RealTime.Audio.Windows.csproj" />
     <Project Path="src/GccPhat.RealTime/GccPhat.RealTime.csproj" />
+    <Project Path="src/GccPhat.RealTime.Avalonia/GccPhat.RealTime.Avalonia.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/GccPhat.Core.Tests/GccPhat.Core.Tests.csproj" />

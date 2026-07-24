@@ -1,0 +1,30 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <AvaloniaUseCompiledBindingsByDefault>false</AvaloniaUseCompiledBindingsByDefault>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\GccPhat.RealTime.Shared\GccPhat.RealTime.Shared.csproj" />
+    <ProjectReference Include="..\GccPhat.RealTime.Audio.PortAudio\GccPhat.RealTime.Audio.PortAudio.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Avalonia" Version="12.1.0" />
+    <PackageReference Include="Avalonia.Desktop" Version="12.1.0" />
+    <PackageReference Include="Avalonia.Themes.Fluent" Version="12.1.0" />
+    <PackageReference Include="Avalonia.Fonts.Inter" Version="12.1.0" />
+    <PackageReference Include="ScottPlot.Avalonia" Version="5.1.59" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Model files are not committed — place them in Assets/ after downloading. -->
+    <Content Include="Assets\yamnet.onnx" CopyToOutputDirectory="PreserveNewest" Condition="Exists('Assets\yamnet.onnx')" />
+    <Content Include="Assets\yamnet_class_map.csv" CopyToOutputDirectory="PreserveNewest" Condition="Exists('Assets\yamnet_class_map.csv')" />
+  </ItemGroup>
+
+</Project>

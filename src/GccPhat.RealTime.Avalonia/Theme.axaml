@@ -1,0 +1,184 @@
+<Styles xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:conv="clr-namespace:GccPhat.RealTime.Converters">
+
+  <Styles.Resources>
+    <Color x:Key="BgColor">#FF0B0F14</Color>
+    <Color x:Key="PanelColor">#FF121A24</Color>
+    <Color x:Key="PanelBorderColor">#FF223345</Color>
+    <Color x:Key="FieldColor">#FF0E151E</Color>
+    <Color x:Key="AccentColor">#FF19D3FF</Color>
+    <Color x:Key="AccentDimColor">#FF0E5A66</Color>
+    <Color x:Key="TextColor">#FFD6E2EE</Color>
+    <Color x:Key="TextDimColor">#FF7C8DA0</Color>
+
+    <SolidColorBrush x:Key="BgBrush" Color="{StaticResource BgColor}" />
+    <SolidColorBrush x:Key="PanelBrush" Color="{StaticResource PanelColor}" />
+    <SolidColorBrush x:Key="PanelBorderBrush" Color="{StaticResource PanelBorderColor}" />
+    <SolidColorBrush x:Key="FieldBrush" Color="{StaticResource FieldColor}" />
+    <SolidColorBrush x:Key="AccentBrush" Color="{StaticResource AccentColor}" />
+    <SolidColorBrush x:Key="AccentDimBrush" Color="{StaticResource AccentDimColor}" />
+    <SolidColorBrush x:Key="TextBrush" Color="{StaticResource TextColor}" />
+    <SolidColorBrush x:Key="TextDimBrush" Color="{StaticResource TextDimColor}" />
+    <SolidColorBrush x:Key="AccentHoverBrush" Color="#3319D3FF" />
+    <SolidColorBrush x:Key="GoodBrush" Color="#FF2EE6A6" />
+    <SolidColorBrush x:Key="WarnBrush" Color="#FFFFC857" />
+    <SolidColorBrush x:Key="DangerBrush" Color="#FFFF5C7A" />
+
+    <conv:PairStatusToBrushConverter x:Key="PairStatusToBrush" />
+    <conv:ChannelActivityToBrushConverter x:Key="ChannelActivityToBrush" />
+    <conv:PaletteIndexToBrushConverter x:Key="PaletteIndexToBrush" />
+  </Styles.Resources>
+
+  <!-- ============================ Base text ============================ -->
+  <Style Selector="TextBlock">
+    <Setter Property="Foreground" Value="{StaticResource TextBrush}" />
+    <Setter Property="FontFamily" Value="Segoe UI" />
+    <Setter Property="FontSize" Value="14" />
+  </Style>
+
+  <Style Selector="TextBlock.SectionHeader">
+    <Setter Property="Foreground" Value="{StaticResource AccentBrush}" />
+    <Setter Property="FontFamily" Value="Consolas" />
+    <Setter Property="FontWeight" Value="Bold" />
+    <Setter Property="FontSize" Value="16" />
+    <Setter Property="Margin" Value="0,0,0,8" />
+  </Style>
+
+  <!-- Collapsible section header (a toggle with a rotating chevron) -->
+  <Style Selector="ToggleButton.ExpanderHeader">
+    <Setter Property="Cursor" Value="Hand" />
+    <Setter Property="Background" Value="Transparent" />
+    <Setter Property="HorizontalAlignment" Value="Left" />
+    <Setter Property="Template">
+      <ControlTemplate>
+        <StackPanel Orientation="Horizontal" Background="Transparent">
+          <Path Name="chev" Width="10" Height="10" Stretch="Uniform"
+                Fill="{StaticResource AccentBrush}" Data="M 0 0 L 6 5 L 0 10 Z"
+                VerticalAlignment="Center" RenderTransformOrigin="0.5,0.5" />
+          <TextBlock Text="{TemplateBinding Content}" Margin="9,0,0,0"
+                     Foreground="{StaticResource AccentBrush}" FontFamily="Consolas"
+                     FontWeight="Bold" FontSize="16" />
+        </StackPanel>
+      </ControlTemplate>
+    </Setter>
+  </Style>
+  <Style Selector="ToggleButton.ExpanderHeader:checked /template/ Path#chev">
+    <Setter Property="RenderTransform">
+      <RotateTransform Angle="90" />
+    </Setter>
+  </Style>
+  <Style Selector="ToggleButton.ExpanderHeader:pointerover /template/ Path#chev">
+    <Setter Property="Opacity" Value="0.8" />
+  </Style>
+
+  <!-- ============================ Card panel ============================ -->
+  <Style Selector="Border.Card">
+    <Setter Property="Background" Value="{StaticResource PanelBrush}" />
+    <Setter Property="BorderBrush" Value="{StaticResource PanelBorderBrush}" />
+    <Setter Property="BorderThickness" Value="1" />
+    <Setter Property="CornerRadius" Value="6" />
+    <Setter Property="Padding" Value="12" />
+    <Setter Property="Margin" Value="0,0,0,10" />
+  </Style>
+
+  <!-- ============================ Button ============================ -->
+  <Style Selector="Button">
+    <Setter Property="Foreground" Value="{StaticResource AccentBrush}" />
+    <Setter Property="Background" Value="Transparent" />
+    <Setter Property="BorderBrush" Value="{StaticResource AccentDimBrush}" />
+    <Setter Property="BorderThickness" Value="1" />
+    <Setter Property="Padding" Value="12,8" />
+    <Setter Property="FontSize" Value="14" />
+    <Setter Property="FontWeight" Value="SemiBold" />
+    <Setter Property="Cursor" Value="Hand" />
+    <Setter Property="CornerRadius" Value="4" />
+    <Setter Property="HorizontalContentAlignment" Value="Center" />
+    <Setter Property="VerticalContentAlignment" Value="Center" />
+  </Style>
+  <Style Selector="Button:pointerover">
+    <Setter Property="Background" Value="{StaticResource AccentHoverBrush}" />
+    <Setter Property="BorderBrush" Value="{StaticResource AccentBrush}" />
+  </Style>
+  <Style Selector="Button:pressed">
+    <Setter Property="Background" Value="{StaticResource AccentDimBrush}" />
+  </Style>
+  <Style Selector="Button:disabled">
+    <Setter Property="Opacity" Value="0.35" />
+  </Style>
+
+  <Style Selector="Button.AccentButton">
+    <Setter Property="Foreground" Value="{StaticResource BgBrush}" />
+    <Setter Property="Background" Value="{StaticResource AccentBrush}" />
+    <Setter Property="BorderBrush" Value="{StaticResource AccentBrush}" />
+    <Setter Property="FontWeight" Value="Bold" />
+  </Style>
+
+  <!-- ============================ TextBox ============================ -->
+  <Style Selector="TextBox">
+    <Setter Property="Foreground" Value="{StaticResource TextBrush}" />
+    <Setter Property="Background" Value="{StaticResource FieldBrush}" />
+    <Setter Property="BorderBrush" Value="{StaticResource PanelBorderBrush}" />
+    <Setter Property="BorderThickness" Value="1" />
+    <Setter Property="CaretBrush" Value="{StaticResource AccentBrush}" />
+    <Setter Property="Padding" Value="7,6" />
+    <Setter Property="FontFamily" Value="Consolas" />
+    <Setter Property="FontSize" Value="15" />
+    <Setter Property="VerticalContentAlignment" Value="Center" />
+    <Setter Property="CornerRadius" Value="3" />
+  </Style>
+  <Style Selector="TextBox:focus-within">
+    <Setter Property="BorderBrush" Value="{StaticResource AccentBrush}" />
+  </Style>
+  <Style Selector="TextBox:disabled">
+    <Setter Property="Opacity" Value="0.4" />
+  </Style>
+
+  <!-- ============================ CheckBox ============================ -->
+  <Style Selector="CheckBox">
+    <Setter Property="Foreground" Value="{StaticResource TextBrush}" />
+    <Setter Property="FontSize" Value="14" />
+  </Style>
+
+  <!-- ============================ ComboBox ============================ -->
+  <Style Selector="ComboBox">
+    <Setter Property="Foreground" Value="{StaticResource TextBrush}" />
+    <Setter Property="Background" Value="{StaticResource FieldBrush}" />
+    <Setter Property="BorderBrush" Value="{StaticResource PanelBorderBrush}" />
+    <Setter Property="Height" Value="34" />
+    <Setter Property="FontSize" Value="15" />
+    <Setter Property="CornerRadius" Value="3" />
+  </Style>
+  <Style Selector="ComboBox:disabled">
+    <Setter Property="Opacity" Value="0.4" />
+  </Style>
+
+  <!-- ============================ ListBox ============================ -->
+  <Style Selector="ListBox">
+    <Setter Property="Background" Value="{StaticResource FieldBrush}" />
+    <Setter Property="BorderBrush" Value="{StaticResource PanelBorderBrush}" />
+    <Setter Property="BorderThickness" Value="1" />
+    <Setter Property="Foreground" Value="{StaticResource TextBrush}" />
+  </Style>
+  <Style Selector="ListBoxItem:pointerover">
+    <Setter Property="Background" Value="#0C19D3FF" />
+  </Style>
+  <Style Selector="ListBoxItem:selected">
+    <Setter Property="Background" Value="{StaticResource AccentHoverBrush}" />
+  </Style>
+
+  <!-- ============================ ProgressBar ============================ -->
+  <Style Selector="ProgressBar">
+    <Setter Property="Background" Value="{StaticResource FieldBrush}" />
+    <Setter Property="Foreground" Value="{StaticResource AccentBrush}" />
+    <Setter Property="BorderThickness" Value="0" />
+  </Style>
+
+  <!-- ============================ Separator (via Border, no Avalonia equivalent control) ============================ -->
+  <Style Selector="Border.Separator">
+    <Setter Property="Height" Value="1" />
+    <Setter Property="Background" Value="{StaticResource PanelBorderBrush}" />
+    <Setter Property="Margin" Value="0,8" />
+  </Style>
+
+</Styles>

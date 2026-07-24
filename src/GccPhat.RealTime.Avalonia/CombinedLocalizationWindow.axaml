@@ -1,5 +1,5 @@
 <Window x:Class="GccPhat.RealTime.CombinedLocalizationWindow"
-        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="Combined localization" Height="560" Width="880"
         Background="{StaticResource BgBrush}" FontFamily="Segoe UI" FontSize="14">
@@ -24,7 +24,7 @@
                     <TextBlock Text="Combines the live azimuth from two open analysis windows into a 2D (x,y) source fix. Assumes both arrays share the same orientation (no relative rotation)."
                                Foreground="{StaticResource TextDimBrush}" Margin="0,4,0,0" TextWrapping="Wrap" />
 
-                    <Border Visibility="{Binding NeedsMoreSessions, Converter={StaticResource BoolToVis}}"
+                    <Border IsVisible="{Binding NeedsMoreSessions}"
                             Background="{StaticResource FieldBrush}" BorderBrush="{StaticResource WarnBrush}" BorderThickness="1"
                             CornerRadius="6" Padding="10" Margin="0,10,0,0">
                         <StackPanel>
@@ -34,15 +34,15 @@
                         </StackPanel>
                     </Border>
 
-                    <TextBlock Style="{StaticResource SectionHeader}" Text="ARRAYS" Margin="0,12,0,8" />
+                    <TextBlock Classes="SectionHeader" Text="ARRAYS" Margin="0,12,0,8" />
                     <TextBlock Text="Array A" Foreground="{StaticResource TextDimBrush}" FontSize="12" />
-                    <ComboBox ItemsSource="{Binding AvailableSessions}" DisplayMemberPath="SessionLabel"
-                              SelectedItem="{Binding SessionA}" Margin="0,2,0,8" />
+                    <ComboBox ItemsSource="{Binding AvailableSessions}" DisplayMemberBinding="{Binding SessionLabel}"
+                              SelectedItem="{Binding SessionA}" Margin="0,2,0,8" HorizontalAlignment="Stretch" />
                     <TextBlock Text="Array B" Foreground="{StaticResource TextDimBrush}" FontSize="12" />
-                    <ComboBox ItemsSource="{Binding AvailableSessions}" DisplayMemberPath="SessionLabel"
-                              SelectedItem="{Binding SessionB}" Margin="0,2,0,0" />
+                    <ComboBox ItemsSource="{Binding AvailableSessions}" DisplayMemberBinding="{Binding SessionLabel}"
+                              SelectedItem="{Binding SessionB}" Margin="0,2,0,0" HorizontalAlignment="Stretch" />
 
-                    <TextBlock Style="{StaticResource SectionHeader}" Text="OFFSET (B relative to A)" Margin="0,12,0,8" />
+                    <TextBlock Classes="SectionHeader" Text="OFFSET (B relative to A)" Margin="0,12,0,8" />
                     <Grid>
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="*" />
@@ -51,27 +51,27 @@
                         </Grid.ColumnDefinitions>
                         <StackPanel Grid.Column="0" Margin="0,0,4,0">
                             <TextBlock Text="&#916;x (cm)" Foreground="{StaticResource TextDimBrush}" FontSize="11" />
-                            <TextBox Text="{Binding OffsetXCm, UpdateSourceTrigger=PropertyChanged}" />
+                            <TextBox Text="{Binding OffsetXCm}" />
                         </StackPanel>
                         <StackPanel Grid.Column="1" Margin="0,0,4,0">
                             <TextBlock Text="&#916;y (cm)" Foreground="{StaticResource TextDimBrush}" FontSize="11" />
-                            <TextBox Text="{Binding OffsetYCm, UpdateSourceTrigger=PropertyChanged}" />
+                            <TextBox Text="{Binding OffsetYCm}" />
                         </StackPanel>
                         <StackPanel Grid.Column="2">
                             <TextBlock Text="&#916;z (cm)" Foreground="{StaticResource TextDimBrush}" FontSize="11" />
-                            <TextBox Text="{Binding OffsetZCm, UpdateSourceTrigger=PropertyChanged}" />
+                            <TextBox Text="{Binding OffsetZCm}" />
                         </StackPanel>
                     </Grid>
                     <TextBlock Text="&#916;z is informational only — the 2D fix has no elevation data to combine it with."
                                Foreground="{StaticResource TextDimBrush}" FontSize="11" Margin="0,4,0,0" TextWrapping="Wrap" />
 
-                    <TextBlock Style="{StaticResource SectionHeader}" Text="LIVE BEARINGS" Margin="0,12,0,8" />
+                    <TextBlock Classes="SectionHeader" Text="LIVE BEARINGS" Margin="0,12,0,8" />
                     <TextBlock Text="{Binding SessionA.SessionLabel, StringFormat='A: {0}'}" FontFamily="Consolas" FontSize="12" Foreground="{StaticResource AccentBrush}" />
                     <TextBlock Text="{Binding SessionA.AzimuthText}" FontFamily="Consolas" Foreground="{StaticResource TextBrush}" Margin="0,0,0,8" />
                     <TextBlock Text="{Binding SessionB.SessionLabel, StringFormat='B: {0}'}" FontFamily="Consolas" FontSize="12" Foreground="{StaticResource WarnBrush}" />
                     <TextBlock Text="{Binding SessionB.AzimuthText}" FontFamily="Consolas" Foreground="{StaticResource TextBrush}" />
 
-                    <TextBlock Style="{StaticResource SectionHeader}" Text="SYNC (optional)" Margin="0,12,0,8" />
+                    <TextBlock Classes="SectionHeader" Text="SYNC (optional)" Margin="0,12,0,8" />
                     <TextBlock Text="Bring the two arrays' closest mics together, clap, then Measure sync. This corrects for the two sessions' independent capture clocks — it does not change the triangulated fix above."
                                Foreground="{StaticResource TextDimBrush}" FontSize="11" TextWrapping="Wrap" Margin="0,0,0,8" />
                     <Grid>
@@ -82,11 +82,11 @@
                         </Grid.ColumnDefinitions>
                         <StackPanel Grid.Column="0">
                             <TextBlock Text="Sync channel (A)" Foreground="{StaticResource TextDimBrush}" FontSize="11" />
-                            <ComboBox ItemsSource="{Binding SessionA.AvailableChannels}" SelectedItem="{Binding SyncChannelA}" />
+                            <ComboBox ItemsSource="{Binding SessionA.AvailableChannels}" SelectedItem="{Binding SyncChannelA}" HorizontalAlignment="Stretch" />
                         </StackPanel>
                         <StackPanel Grid.Column="2">
                             <TextBlock Text="Sync channel (B)" Foreground="{StaticResource TextDimBrush}" FontSize="11" />
-                            <ComboBox ItemsSource="{Binding SessionB.AvailableChannels}" SelectedItem="{Binding SyncChannelB}" />
+                            <ComboBox ItemsSource="{Binding SessionB.AvailableChannels}" SelectedItem="{Binding SyncChannelB}" HorizontalAlignment="Stretch" />
                         </StackPanel>
                     </Grid>
                     <Button Content="{Binding MeasureSyncButtonText}" Command="{Binding MeasureSyncCommand}" Height="34" Margin="0,8,0,0" />
@@ -94,7 +94,7 @@
                                TextWrapping="Wrap" Margin="0,8,0,0" />
                     <TextBlock Text="{Binding CalibrationSummaryText}" Foreground="{StaticResource TextDimBrush}" FontSize="11"
                                TextWrapping="Wrap" Margin="0,2,0,0" />
-                    <Border Visibility="{Binding HasCalibration, Converter={StaticResource BoolToVis}}"
+                    <Border IsVisible="{Binding HasCalibration}"
                             Background="{StaticResource FieldBrush}" BorderBrush="{Binding CrossCheckStatus, Converter={StaticResource PairStatusToBrush}}" BorderThickness="1"
                             CornerRadius="6" Padding="10" Margin="0,10,0,0">
                         <TextBlock Text="{Binding CrossCheckText}" Foreground="{Binding CrossCheckStatus, Converter={StaticResource PairStatusToBrush}}" FontFamily="Consolas"

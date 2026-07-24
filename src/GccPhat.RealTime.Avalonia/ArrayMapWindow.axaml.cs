@@ -3,9 +3,8 @@ using System.Collections.Generic;
 using System.Collections.Specialized;
 using System.ComponentModel;
 using System.Linq;
-using System.Windows;
-using System.Windows.Controls;
-using System.Windows.Media;
+using Avalonia.Controls;
+using Avalonia.Media;
 using GccPhat.RealTime.ViewModels;
 
 namespace GccPhat.RealTime;
@@ -30,7 +29,7 @@ public partial class ArrayMapWindow : Window
         Loaded += (_, _) => Redraw();
     }
 
-    private void OnCanvasSizeChanged(object sender, SizeChangedEventArgs e) => Redraw();
+    private void OnCanvasSizeChanged(object? sender, SizeChangedEventArgs e) => Redraw();
 
     private void OnPositionsChanged(object? sender, NotifyCollectionChangedEventArgs e) => Redraw();
 
@@ -55,19 +54,19 @@ public partial class ArrayMapWindow : Window
     {
         Canvas c = MapCanvas;
         c.Children.Clear();
-        double w = c.ActualWidth, h = c.ActualHeight;
+        double w = c.Bounds.Width, h = c.Bounds.Height;
         if (w < 20 || h < 20) return;
 
         double cx = w / 2, cy = h / 2;
         double radius = Math.Min(w, h) / 2 - 50;
         string azimuthText = _viewModel.HasVisibleLocalizationAzimuth
-            ? $"{_viewModel.AzimuthDeg:F1}\u00b0"
+            ? $"{_viewModel.AzimuthDeg:F1}°"
             : "--";
         AzimuthLabel.Text = $"Azimuth: {azimuthText}   {_viewModel.LevelText}";
 
-        Brush dim = (Brush)FindResource("TextDimBrush");
-        Brush text = (Brush)FindResource("TextBrush");
-        Brush accent = (Brush)FindResource("AccentBrush");
+        IBrush dim = FindBrush("TextDimBrush");
+        IBrush text = FindBrush("TextBrush");
+        IBrush accent = FindBrush("AccentBrush");
 
         ArrayGeometryCanvasDrawing.DrawCompass(c, w, h, dim);
 
@@ -145,6 +144,9 @@ public partial class ArrayMapWindow : Window
         ArrayGeometryCanvasDrawing.DrawAzimuthArrow(c, cx, cy, radius, _viewModel.AzimuthDeg, accent);
         ArrayGeometryCanvasDrawing.DrawCenter(c, cx, cy, text);
     }
+
+    private IBrush FindBrush(string key)
+        => this.TryFindResource(key, out object? value) && value is IBrush brush ? brush : Brushes.White;
 
     protected override void OnClosed(EventArgs e)
     {

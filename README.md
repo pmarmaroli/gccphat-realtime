@@ -1,13 +1,14 @@
 # GCC-PHAT Real-Time — Microphone Array Delay Viewer
 
-![Platform](https://img.shields.io/badge/platform-Windows-lightgrey)
+![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20Linux-lightgrey)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![.NET](https://img.shields.io/badge/.NET-8.0-512BD4)
 
-A Windows desktop app (WPF, .NET 8) that captures a **microphone array** (or any
-multichannel / internal microphone) and shows, **in real time**, the **time delay**
-between any pair of microphones using the **GCC-PHAT** algorithm (Generalized
-Cross-Correlation with Phase Transform, Knapp & Carter, 1976).
+A cross-platform desktop app (.NET 8 — **WPF** on Windows, **Avalonia** on Linux/Ubuntu)
+that captures a **microphone array** (or any multichannel / internal microphone) and
+shows, **in real time**, the **time delay** between any pair of microphones using the
+**GCC-PHAT** algorithm (Generalized Cross-Correlation with Phase Transform, Knapp &
+Carter, 1976).
 
 Pick a capture device, add the channel pairs you want to compare, press **Start**, and
 watch the inter-microphone delay evolve live as a source moves around the array.
@@ -16,8 +17,10 @@ watch the inter-microphone delay evolve live as a source moves around the array.
 
 **Capture & delay analysis**
 
-- Enumerate active WASAPI capture endpoints (multichannel arrays, laptop mic, …), with automatic
-  fallback to exclusive mode for arrays that expose more channels natively than the shared mix format.
+- Enumerate active capture endpoints (multichannel arrays, laptop mic, …) — WASAPI on Windows, with
+  automatic fallback to exclusive mode for arrays that expose more channels natively than the shared
+  mix format (and a WDM-KS bypass if a driver's voice-processing APO silences the WASAPI stream);
+  PortAudio on Linux.
 - Select one or more **channel pairs** (channel A ↔ channel B) and estimate their GCC‑PHAT delay in
   real time, with a live **delay (ms) vs time** chart (ScottPlot DataLogger).
 - Per-pair numeric readout: current delay, coherence/quality verdict, and band-limited RMS levels.
@@ -35,8 +38,8 @@ watch the inter-microphone delay evolve live as a source moves around the array.
   existing coarse delay LUT by cos(elevation) — no additional LUT needed.
 - **Array map** always shows mic positions (colour-coded by channel) and the pair lines between them,
   regardless of the signal threshold. Pairs used for localization are drawn solid; inactive pairs dashed.
-- Mic geometry editor (circular or linear layout, mic count, diameter/spacing, optional center mic)
-  mapped to capture channels and shared by the localizer and the beamformer.
+- Mic geometry editor (circular, linear, or square layout, mic count, diameter/spacing/side,
+  optional center mic) mapped to capture channels and shared by the localizer and the beamformer.
 
 **Combined Localization (two arrays)**
 
@@ -73,9 +76,9 @@ watch the inter-microphone delay evolve live as a source moves around the array.
 - Feeds a 1-second window from any capture channel, resampled from the device rate to 16 kHz with a
   windowed-sinc FIR anti-alias filter. Fires every ~480 ms.
 - Displays the **top-10 predicted labels** with confidence scores and horizontal bar indicators.
-- The model is downloaded and converted automatically on first launch via `start.bat`
-  (requires Python; `start.bat` runs `pip install tensorflow tf2onnx` then `tf2onnx.convert`).
-  Subsequent launches skip the setup entirely.
+- The model is downloaded and converted automatically on first launch via `start.bat` (Windows) or
+  `start.sh` (Linux) — both require Python and run `pip install tensorflow tf2onnx` then
+  `tf2onnx.convert`. Subsequent launches skip the setup entirely.
 - Graceful degradation: if the model is absent or Python is unavailable, all other features
   continue working normally and the classification panel shows setup instructions.
 
@@ -91,9 +94,9 @@ watch the inter-microphone delay evolve live as a source moves around the array.
 ## How it works
 
 ```
-[WASAPI capture thread]          [Analysis thread]                  [UI thread / WPF]
- WasapiCapture(device)   ──►  per-channel ring buffers  ──►  per active pair:           ──►  ScottPlot live chart
- de-interleave float32        (GccPhat.RealTime.Audio)        latest window → GccPhat        per-pair delay readout
+[capture thread]                 [Analysis thread]                  [UI thread]
+ ICaptureSource(device)  ──►  per-channel ring buffers  ──►  per active pair:           ──►  ScottPlot live chart
+ de-interleave float32        (GccPhat.RealTime.Shared)        latest window → GccPhat        per-pair delay readout
                                                               → (delay ms, rms)
                                                               └─► SRP-PHAT localizer     ──►  array map + compass
                                                                   → azimuth + spectrum        polar overlay
@@ -103,9 +106,15 @@ watch the inter-microphone delay evolve live as a source moves around the array.
  ring buffer channel N ──► FIR downsample to 16 kHz ──► ONNX Runtime (yamnet.onnx) ──►  top-10 labels + scores
 ```
 
+The capture/output backend is swapped per platform behind a small `IAudioPlatform` abstraction:
+WASAPI (`GccPhat.RealTime.Audio.Windows`, via NAudio) on Windows, PortAudio
+(`GccPhat.RealTime.Audio.PortAudio`) on Linux — `GccPhat.RealTime.Shared`'s `RealTimeEngine` and
+ViewModels don't know or care which one is running underneath.
+
 When beam listening is enabled, the analysis thread also feeds a weighted-overlap-add beamformer
 that reads contiguous hop-sized blocks from the same ring buffers, steers and sums the selected
-channels, and pushes the reconstructed mono stream to the chosen render device (NAudio `WasapiOut`).
+channels, and pushes the reconstructed mono stream to the chosen render device (WASAPI `WasapiOut`
+on Windows, a PortAudio output stream on Linux).
 
 **Combined Localization** is a lightweight coordinator on top of two independent sessions — it
 watches each session's live `AzimuthDeg` and triangulates, never fusing raw audio. Sync
@@ -142,39 +151,58 @@ Same as the original `gccphat` CLI:
 
 ```
 src/
-  GccPhat.Core/             DSP library (FFT, GCC-PHAT, SRP-PHAT, beamformer, near-field TDOA) — no UI/audio deps
-  GccPhat.RealTime/
-    Analysis/               RealTimeEngine, ChannelPair, AudioResampler, YamNetClassifier, SyncCalibration
-    Audio/                  MultichannelCapture + ChannelRingBuffer (WASAPI, NAudio)
-    ViewModels/             MainViewModel, PairViewModel, ClassificationViewModel, CombinedLocalizationViewModel, …
-    Assets/                 yamnet.onnx + yamnet_class_map.csv (downloaded by start.bat)
-    ArrayMapWindow          Compass + mic geometry + polar spectrum + hemisphere heat map
-    CombinedLocalizationWindow  Two-array triangulated fix + sync calibration + cross-check
-    ClassificationWindow    Top-10 sound event results with score bars
-    BeamformerWindow        Beam steering + channel selection + passband toggle
-    DelayViewWindow         Live ScottPlot delay chart + per-pair readouts
+  GccPhat.Core/                  DSP library (FFT, GCC-PHAT, SRP-PHAT, beamformer, near-field TDOA) — no UI/audio deps
+  GccPhat.RealTime.Shared/       Platform-neutral core, shared by both UIs (net8.0)
+    Analysis/                    RealTimeEngine, ChannelPair, AudioResampler, YamNetClassifier, SyncCalibration
+    Audio/                       ICaptureSource, ChannelRingBuffer, WavFileReplayCapture, IAudioPlatform abstraction
+    Mvvm/                        ObservableObject, RelayCommand, IUiDispatcher, IUserPrompt
+    ViewModels/                  MainViewModel, PairViewModel, ClassificationViewModel, CombinedLocalizationViewModel, …
+    Presets/                     Saved geometry presets (JSON, user AppData/~/.config)
+  GccPhat.RealTime.Audio.Windows/   WASAPI backend (NAudio) — MultichannelCapture, DeviceEnumerator, WasapiOutputSink
+  GccPhat.RealTime.Audio.PortAudio/ PortAudio backend (PortAudioSharp2) — the only backend on Linux,
+                                     also the Windows WDM-KS fallback when a WASAPI stream reads back silent
+  GccPhat.RealTime/              Windows UI (WPF, net8.0-windows) — 6 windows + Theme.xaml
+    Assets/                      yamnet.onnx + yamnet_class_map.csv (downloaded by start.bat)
+  GccPhat.RealTime.Avalonia/     Linux/cross-platform UI (Avalonia, net8.0) — same 6 windows, Theme.axaml
+    Assets/                      yamnet.onnx + yamnet_class_map.csv (downloaded by start.sh)
 tests/
-  GccPhat.Core.Tests/       xUnit tests: bit-exact GCC-PHAT vs the gccphat CLI, plus SRP-PHAT and near-field TDOA
+  GccPhat.Core.Tests/            xUnit tests: bit-exact GCC-PHAT vs the gccphat CLI, plus SRP-PHAT and near-field TDOA
 ```
+
+Both UIs (`GccPhat.RealTime` and `GccPhat.RealTime.Avalonia`) are thin: window XAML/AXAML, canvas
+drawing, and a couple of small platform adapters (dispatcher, file picker, Yes/No prompt). All
+actual behavior — device selection, geometry, GCC-PHAT/SRP-PHAT, beamforming, classification —
+lives once in `GccPhat.RealTime.Shared` and is identical on both platforms.
 
 ## Build & run
 
-Requirements: **.NET 8 SDK** (or newer) on **Windows** (WASAPI capture is Windows-only).
+Requirements: **.NET 8 SDK** (or newer) on **Windows** or **Linux (Ubuntu)**. Windows runs the WPF
+UI over WASAPI; Linux runs the Avalonia UI over PortAudio (no extra system package needed — the
+native `libportaudio.so` ships in the app; ALSA (`libasound2`) just needs to already be present,
+which it is on virtually any Ubuntu desktop install).
 
-### Quickstart (double-click)
+### Quickstart
+
+Windows (double-click, or from a shell):
 
 ```
 start.bat
 ```
 
-The script will:
+Linux/Ubuntu (from a terminal):
+
+```bash
+./start.sh
+```
+
+Both scripts do the same thing for their platform:
 1. Kill any running instance of the app.
 2. Download and convert the YAMNet ONNX model on first launch (requires Python 3.9+;
    subsequent launches skip this step).
 3. Build the project in Release mode (`dotnet build`).
-4. Launch `GccPhat.RealTime.exe`.
+4. Launch the app.
 
-The console window stays open so you can read any error messages.
+The console/terminal window stays open so you can read any error messages.
 
 ### Manual build
 
@@ -185,21 +213,30 @@ cd gccphat-realtime
 # run the tests (verifies the DSP matches the gccphat CLI)
 dotnet test tests/GccPhat.Core.Tests/GccPhat.Core.Tests.csproj -c Release
 
-# run the app
+# Windows (WPF)
 dotnet run --project src/GccPhat.RealTime/GccPhat.RealTime.csproj -c Release
+
+# Linux (Avalonia)
+dotnet run --project src/GccPhat.RealTime.Avalonia/GccPhat.RealTime.Avalonia.csproj -c Release
 ```
 
-### Self-contained single-file build (no .NET install required to run)
+### Self-contained build (no .NET install required to run)
 
 ```bash
+# Windows, single-file
 dotnet publish src/GccPhat.RealTime/GccPhat.RealTime.csproj -c Release -r win-x64 ^
     --self-contained true -p:PublishSingleFile=true -o publish
+
+# Linux
+dotnet publish src/GccPhat.RealTime.Avalonia/GccPhat.RealTime.Avalonia.csproj -c Release -r linux-x64 \
+    --self-contained true -o publish
 ```
 
 ### YAMNet model (manual setup)
 
-If Python is not available, set up the model manually and place both files in the
-`Assets/` folder next to the executable:
+If Python is not available, set up the model manually and place both files in the `Assets/`
+folder next to the executable (`src/GccPhat.RealTime/Assets/` for Windows,
+`src/GccPhat.RealTime.Avalonia/Assets/` for Linux):
 
 ```bash
 pip install tensorflow tensorflow-hub tf2onnx
@@ -236,7 +273,9 @@ time resolution of the live plot. See the
 - GCC-PHAT algorithm and reference C# implementation:
   [pmarmaroli/gccphat](https://github.com/pmarmaroli/gccphat).
 - In-place complex FFT after Gerald T. Beauregard (MIT License).
-- Plotting by [ScottPlot](https://scottplot.net); audio I/O by [NAudio](https://github.com/naudio/NAudio).
+- UI by [WPF](https://github.com/dotnet/wpf) (Windows) and [Avalonia](https://avaloniaui.net) (Linux);
+  plotting by [ScottPlot](https://scottplot.net); audio I/O by [NAudio](https://github.com/naudio/NAudio)
+  (Windows/WASAPI) and [PortAudioSharp2](https://www.nuget.org/packages/PortAudioSharp2) (Linux/PortAudio).
 - Sound event classification by [YAMNet](https://tfhub.dev/google/yamnet/1) (Google, Apache 2.0),
   served via [ONNX Runtime](https://onnxruntime.ai) for .NET.
 

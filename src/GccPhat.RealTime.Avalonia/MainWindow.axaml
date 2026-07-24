@@ -1,12 +1,8 @@
-﻿<Window x:Class="GccPhat.RealTime.MainWindow"
-        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+<Window x:Class="GccPhat.RealTime.MainWindow"
+        xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
-        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
-        xmlns:local="clr-namespace:GccPhat.RealTime"
-        mc:Ignorable="d"
         Title="GCC-PHAT // Real-Time Microphone Array" Height="900" Width="1480"
-        Background="{StaticResource BgBrush}" FontFamily="Segoe UI" FontSize="14" TextOptions.TextFormattingMode="Display">
+        Background="{StaticResource BgBrush}" FontFamily="Segoe UI" FontSize="14">
     <DockPanel>
 
         <!-- ===================== Status bar ===================== -->
@@ -33,9 +29,9 @@
                             </Grid.ColumnDefinitions>
                             <Button Grid.Column="0" Content="New analysis window &#8599;" Height="40" FontSize="12" Margin="0,0,16,0"
                                     Click="OnNewWindow"
-                                    ToolTip="Open a second, independent capture/analysis chain for a second microphone array." />
+                                    ToolTip.Tip="Open a second, independent capture/analysis chain for a second microphone array." />
                             <Button Grid.Column="1" Content="START" Height="40" MinWidth="96" FontSize="15" Margin="0,0,8,0"
-                                    Style="{StaticResource AccentButton}" Command="{Binding StartCommand}" />
+                                    Classes="AccentButton" Command="{Binding StartCommand}" />
                             <Button Grid.Column="2" Content="STOP" Height="40" MinWidth="96" FontSize="15"
                                     Command="{Binding StopCommand}" />
                         </Grid>
@@ -46,9 +42,9 @@
                     </DockPanel>
 
                     <!-- Activity gate: always visible, drives whether anything downstream runs -->
-                    <Border Style="{StaticResource Card}">
+                    <Border Classes="Card">
                         <StackPanel>
-                            <TextBlock Style="{StaticResource SectionHeader}" Text="ACTIVITY GATE" />
+                            <TextBlock Classes="SectionHeader" Text="ACTIVITY GATE" />
                             <TextBlock Text="Delay, localization, beamforming, and classification all pause while the array is quieter than this."
                                        Foreground="{StaticResource TextDimBrush}" Margin="0,0,0,8" TextWrapping="Wrap" />
                             <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
@@ -64,23 +60,23 @@
                     </Border>
 
                     <!-- Device -->
-                    <Border Style="{StaticResource Card}">
+                    <Border Classes="Card">
                         <StackPanel>
-                            <TextBlock Style="{StaticResource SectionHeader}" Text="CAPTURE DEVICE" />
+                            <TextBlock Classes="SectionHeader" Text="CAPTURE DEVICE" />
                             <StackPanel Orientation="Horizontal" Margin="0,0,0,8" IsEnabled="{Binding CanEditConfig}">
                                 <RadioButton Content="Live device" GroupName="CaptureMode" IsChecked="{Binding IsLiveMode}" Margin="0,0,16,0" />
                                 <RadioButton Content="Audio file" GroupName="CaptureMode" IsChecked="{Binding IsFileMode}" />
                             </StackPanel>
 
-                            <DockPanel Visibility="{Binding IsLiveMode, Converter={StaticResource BoolToVis}}">
+                            <DockPanel IsVisible="{Binding IsLiveMode}">
                                 <Button DockPanel.Dock="Right" Content="Refresh" Width="74" Margin="8,0,0,0"
                                         Command="{Binding RefreshDevicesCommand}" IsEnabled="{Binding CanEditConfig}" />
                                 <ComboBox ItemsSource="{Binding Devices}"
                                           SelectedItem="{Binding SelectedDevice}"
-                                          IsEnabled="{Binding CanEditConfig}" />
+                                          IsEnabled="{Binding CanEditConfig}" HorizontalAlignment="Stretch" />
                             </DockPanel>
 
-                            <StackPanel Visibility="{Binding IsFileMode, Converter={StaticResource BoolToVis}}">
+                            <StackPanel IsVisible="{Binding IsFileMode}">
                                 <DockPanel>
                                     <Button DockPanel.Dock="Right" Content="Browse&#8230;" Width="74" Margin="8,0,0,0"
                                             Click="OnBrowseReplayFile" IsEnabled="{Binding CanEditConfig}" />
@@ -92,11 +88,11 @@
                     </Border>
 
                     <!-- Identify -->
-                    <Border Style="{StaticResource Card}" Visibility="{Binding IsLiveMode, Converter={StaticResource BoolToVis}}">
+                    <Border Classes="Card" IsVisible="{Binding IsLiveMode}">
                         <StackPanel>
-                            <ToggleButton x:Name="IdentifyToggle" Style="{StaticResource ExpanderHeader}"
+                            <ToggleButton x:Name="IdentifyToggle" Classes="ExpanderHeader"
                                           Content="IDENTIFY &#183; BLOW ON A MIC" IsChecked="False" Margin="0,0,0,8" />
-                            <StackPanel Visibility="{Binding IsChecked, ElementName=IdentifyToggle, Converter={StaticResource BoolToVis}}">
+                            <StackPanel IsVisible="{Binding #IdentifyToggle.IsChecked}">
                             <TextBlock Text="{Binding DetectedChannelText}" TextWrapping="Wrap"
                                        Foreground="{StaticResource AccentBrush}" FontFamily="Consolas" FontSize="15" Margin="0,0,0,8" />
                             <ItemsControl ItemsSource="{Binding ChannelMeters}">
@@ -124,11 +120,11 @@
                     </Border>
 
                     <!-- Geometry -->
-                    <Border Style="{StaticResource Card}">
+                    <Border Classes="Card">
                         <StackPanel>
-                            <ToggleButton x:Name="LocalizationToggle" Style="{StaticResource ExpanderHeader}"
+                            <ToggleButton x:Name="LocalizationToggle" Classes="ExpanderHeader"
                                           Content="GEOMETRY" IsChecked="False" Margin="0,0,0,8" />
-                            <StackPanel Visibility="{Binding IsChecked, ElementName=LocalizationToggle, Converter={StaticResource BoolToVis}}">
+                            <StackPanel IsVisible="{Binding #LocalizationToggle.IsChecked}">
                             <TextBlock Text="Microphone layout and channel mapping used by both localization and beamforming."
                                        Foreground="{StaticResource TextDimBrush}" Margin="0,0,0,8" TextWrapping="Wrap" />
                             <Grid IsEnabled="{Binding CanEditConfig}">
@@ -144,26 +140,26 @@
                                     <RowDefinition Height="Auto" />
                                 </Grid.RowDefinitions>
                                 <TextBlock Grid.Row="0" Grid.Column="0" Text="Array" Foreground="{StaticResource TextDimBrush}" VerticalAlignment="Center" Margin="0,4" />
-                                <ComboBox Grid.Row="0" Grid.Column="1" Margin="8,4" ItemsSource="{Binding LayoutOptions}" SelectedItem="{Binding SelectedLayout}" />
+                                <ComboBox Grid.Row="0" Grid.Column="1" Margin="8,4" ItemsSource="{Binding LayoutOptions}" SelectedItem="{Binding SelectedLayout}" HorizontalAlignment="Stretch" />
                                 <TextBlock Grid.Row="1" Grid.Column="0" Text="Mic count" Foreground="{StaticResource TextDimBrush}" VerticalAlignment="Center" Margin="0,4" />
                                 <TextBox Grid.Row="1" Grid.Column="1" Margin="8,4" Text="{Binding MicCount}" IsEnabled="{Binding CanEditMicCount}" />
                                 <TextBlock Grid.Row="2" Grid.Column="0" Text="Diameter (cm)" Foreground="{StaticResource TextDimBrush}" VerticalAlignment="Center" Margin="0,4"
-                                           Visibility="{Binding IsCircular, Converter={StaticResource BoolToVis}}" />
+                                           IsVisible="{Binding IsCircular}" />
                                 <TextBox Grid.Row="2" Grid.Column="1" Margin="8,4" Text="{Binding DiameterCm}"
-                                         Visibility="{Binding IsCircular, Converter={StaticResource BoolToVis}}" />
+                                         IsVisible="{Binding IsCircular}" />
                                 <TextBlock Grid.Row="2" Grid.Column="0" Text="Spacing (cm)" Foreground="{StaticResource TextDimBrush}" VerticalAlignment="Center" Margin="0,4"
-                                           Visibility="{Binding IsLinear, Converter={StaticResource BoolToVis}}" />
+                                           IsVisible="{Binding IsLinear}" />
                                 <TextBox Grid.Row="2" Grid.Column="1" Margin="8,4" Text="{Binding SpacingCm}"
-                                         Visibility="{Binding IsLinear, Converter={StaticResource BoolToVis}}" />
+                                         IsVisible="{Binding IsLinear}" />
                                 <TextBlock Grid.Row="2" Grid.Column="0" Text="Side (cm)" Foreground="{StaticResource TextDimBrush}" VerticalAlignment="Center" Margin="0,4"
-                                           Visibility="{Binding IsSquare, Converter={StaticResource BoolToVis}}" />
+                                           IsVisible="{Binding IsSquare}" />
                                 <TextBox Grid.Row="2" Grid.Column="1" Margin="8,4" Text="{Binding SideCm}"
-                                         Visibility="{Binding IsSquare, Converter={StaticResource BoolToVis}}" />
+                                         IsVisible="{Binding IsSquare}" />
                                 <CheckBox Grid.Row="3" Grid.Column="1" Margin="8,6,4,2" Content="Additional mic in the center"
                                          IsChecked="{Binding HasCenterMic}"
-                                         Visibility="{Binding IsCircularOrSquare, Converter={StaticResource BoolToVis}}" />
+                                         IsVisible="{Binding IsCircularOrSquare}" />
                                 <ComboBox Grid.Row="4" Grid.Column="0" Grid.ColumnSpan="2" Margin="0,6,4,2"
-                                          ItemsSource="{Binding QuickPresetOptions}" SelectedItem="{Binding SelectedQuickPreset}" />
+                                          ItemsSource="{Binding QuickPresetOptions}" SelectedItem="{Binding SelectedQuickPreset}" HorizontalAlignment="Stretch" />
                             </Grid>
 
                             <!-- Saved geometry presets -->
@@ -171,19 +167,19 @@
                                 <TextBlock Text="Saved presets" Foreground="{StaticResource TextDimBrush}" FontSize="12" Margin="0,0,0,4" />
                                 <DockPanel Margin="0,0,0,4">
                                     <Button DockPanel.Dock="Right" Content="Load" Width="60" Margin="6,0,0,0" Command="{Binding LoadPresetCommand}" />
-                                    <ComboBox ItemsSource="{Binding PresetNames}" SelectedItem="{Binding SelectedPresetName}" />
+                                    <ComboBox ItemsSource="{Binding PresetNames}" SelectedItem="{Binding SelectedPresetName}" HorizontalAlignment="Stretch" />
                                 </DockPanel>
                                 <DockPanel>
                                     <Button DockPanel.Dock="Right" Content="Delete" Width="60" Margin="6,0,0,0" Command="{Binding DeletePresetCommand}" />
                                     <Button DockPanel.Dock="Right" Content="Save As" Width="66" Margin="6,0,0,0" Command="{Binding SaveAsPresetCommand}" />
                                     <Button DockPanel.Dock="Right" Content="Save" Width="52" Margin="6,0,0,0" Command="{Binding SavePresetCommand}" />
-                                    <TextBox Text="{Binding NewPresetName, UpdateSourceTrigger=PropertyChanged}" />
+                                    <TextBox Text="{Binding NewPresetName}" />
                                 </DockPanel>
                             </StackPanel>
 
                             <!-- Custom layout: array-wide coordinate entry mode -->
                             <StackPanel Orientation="Horizontal" Margin="0,10,4,2"
-                                        Visibility="{Binding IsCustom, Converter={StaticResource BoolToVis}}"
+                                        IsVisible="{Binding IsCustom}"
                                         IsEnabled="{Binding CanEditConfig}">
                                 <RadioButton Content="Cartesian (X/Y/Z)" GroupName="CustomInputMode" IsChecked="{Binding IsCustomCartesian}" Margin="0,0,16,0" />
                                 <RadioButton Content="Spherical (Az/El/R)" GroupName="CustomInputMode" IsChecked="{Binding IsCustomSpherical}" />
@@ -191,9 +187,9 @@
 
                             <TextBlock Text="Assign channel to each position" Foreground="{StaticResource TextDimBrush}" Margin="0,8,0,2" FontSize="12" />
 
-                            <!-- Circular/Linear: computed, read-only positions -->
+                            <!-- Circular/Linear/Square: computed, read-only positions -->
                             <ItemsControl ItemsSource="{Binding MicPositions}" IsEnabled="{Binding CanEditConfig}"
-                                          Visibility="{Binding IsNotCustom, Converter={StaticResource BoolToVis}}">
+                                          IsVisible="{Binding IsNotCustom}">
                                 <ItemsControl.ItemTemplate>
                                     <DataTemplate>
                                         <Grid Margin="0,3">
@@ -212,7 +208,7 @@
 
                             <!-- Custom: freely editable positions, cartesian or spherical entry -->
                             <ItemsControl ItemsSource="{Binding MicPositions}" IsEnabled="{Binding CanEditConfig}"
-                                          Visibility="{Binding IsCustom, Converter={StaticResource BoolToVis}}">
+                                          IsVisible="{Binding IsCustom}">
                                 <ItemsControl.ItemTemplate>
                                     <DataTemplate>
                                         <Grid Margin="0,3">
@@ -224,17 +220,17 @@
                                             <TextBlock Grid.Column="0" Text="{Binding Name}" FontFamily="Consolas" FontSize="11" Foreground="{StaticResource TextBrush}" VerticalAlignment="Center" />
 
                                             <StackPanel Grid.Column="1" Orientation="Horizontal"
-                                                        Visibility="{Binding DataContext.IsCustomCartesian, RelativeSource={RelativeSource AncestorType=ItemsControl}, Converter={StaticResource BoolToVis}}">
-                                                <TextBox Width="50" Margin="1,0" Text="{Binding XMm}" ToolTip="X (mm)" />
-                                                <TextBox Width="50" Margin="1,0" Text="{Binding YMm}" ToolTip="Y (mm)" />
-                                                <TextBox Width="50" Margin="1,0" Text="{Binding ZMm}" ToolTip="Z (mm)" />
+                                                        IsVisible="{Binding $parent[ItemsControl].DataContext.IsCustomCartesian}">
+                                                <TextBox Width="50" Margin="1,0" Text="{Binding XMm}" ToolTip.Tip="X (mm)" />
+                                                <TextBox Width="50" Margin="1,0" Text="{Binding YMm}" ToolTip.Tip="Y (mm)" />
+                                                <TextBox Width="50" Margin="1,0" Text="{Binding ZMm}" ToolTip.Tip="Z (mm)" />
                                             </StackPanel>
 
                                             <StackPanel Grid.Column="1" Orientation="Horizontal"
-                                                        Visibility="{Binding DataContext.IsCustomSpherical, RelativeSource={RelativeSource AncestorType=ItemsControl}, Converter={StaticResource BoolToVis}}">
-                                                <TextBox Width="50" Margin="1,0" Text="{Binding AzimuthDeg}" ToolTip="Azimuth (deg)" />
-                                                <TextBox Width="50" Margin="1,0" Text="{Binding ElevationDeg}" ToolTip="Elevation (deg)" />
-                                                <TextBox Width="50" Margin="1,0" Text="{Binding RadiusMm}" ToolTip="Radius (mm)" />
+                                                        IsVisible="{Binding $parent[ItemsControl].DataContext.IsCustomSpherical}">
+                                                <TextBox Width="50" Margin="1,0" Text="{Binding AzimuthDeg}" ToolTip.Tip="Azimuth (deg)" />
+                                                <TextBox Width="50" Margin="1,0" Text="{Binding ElevationDeg}" ToolTip.Tip="Elevation (deg)" />
+                                                <TextBox Width="50" Margin="1,0" Text="{Binding RadiusMm}" ToolTip.Tip="Radius (mm)" />
                                             </StackPanel>
 
                                             <ComboBox Grid.Column="2" ItemsSource="{Binding AvailableChannels}" SelectedItem="{Binding Channel}" />
@@ -248,11 +244,11 @@
                     </Border>
 
                     <!-- Analysis parameters -->
-                    <Border Style="{StaticResource Card}">
+                    <Border Classes="Card">
                         <StackPanel>
-                            <ToggleButton x:Name="AnalysisToggle" Style="{StaticResource ExpanderHeader}"
+                            <ToggleButton x:Name="AnalysisToggle" Classes="ExpanderHeader"
                                           Content="ANALYSIS" IsChecked="False" Margin="0,0,0,8" />
-                            <StackPanel Visibility="{Binding IsChecked, ElementName=AnalysisToggle, Converter={StaticResource BoolToVis}}">
+                            <StackPanel IsVisible="{Binding #AnalysisToggle.IsChecked}">
                             <Grid IsEnabled="{Binding CanEditConfig}">
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition Width="Auto" />
@@ -265,7 +261,7 @@
                                     <RowDefinition Height="Auto" />
                                 </Grid.RowDefinitions>
                                 <TextBlock Grid.Row="0" Grid.Column="0" Text="Window (samples)" Foreground="{StaticResource TextDimBrush}" VerticalAlignment="Center" Margin="0,4" />
-                                <ComboBox Grid.Row="0" Grid.Column="1" Margin="8,4" ItemsSource="{Binding BufferSizeOptions}" SelectedItem="{Binding SelectedBufferSize}" />
+                                <ComboBox Grid.Row="0" Grid.Column="1" Margin="8,4" ItemsSource="{Binding BufferSizeOptions}" SelectedItem="{Binding SelectedBufferSize}" HorizontalAlignment="Stretch" />
                                 <TextBlock Grid.Row="1" Grid.Column="1" Text="{Binding WindowDurationText}" Margin="8,0,0,6" FontSize="12" Foreground="{StaticResource AccentBrush}" />
                                 <TextBlock Grid.Row="2" Grid.Column="0" Text="fmin (Hz)" Foreground="{StaticResource TextDimBrush}" VerticalAlignment="Center" Margin="0,4" />
                                 <TextBox Grid.Row="2" Grid.Column="1" Margin="8,4" Text="{Binding Fmin}" />
@@ -303,9 +299,9 @@
             </Border>
 
             <UniformGrid Grid.Row="2" Columns="3" HorizontalAlignment="Stretch" VerticalAlignment="Top">
-                <Border Style="{StaticResource Card}" Margin="0,0,10,0">
+                <Border Classes="Card" Margin="0,0,10,0">
                     <StackPanel>
-                        <TextBlock Text="DELAY VIEW" Style="{StaticResource SectionHeader}" />
+                        <TextBlock Text="DELAY VIEW" Classes="SectionHeader" />
                         <TextBlock Text="Live delay traces and per-pair readouts in a dedicated window."
                                    Foreground="{StaticResource TextDimBrush}" TextWrapping="Wrap" Margin="0,0,0,8" />
                         <TextBlock Text="{Binding DelayToolRequirementsText}"
@@ -316,9 +312,9 @@
                     </StackPanel>
                 </Border>
 
-                <Border Style="{StaticResource Card}" Margin="5,0">
+                <Border Classes="Card" Margin="5,0">
                     <StackPanel>
-                        <TextBlock Text="LOCALIZATION" Style="{StaticResource SectionHeader}" />
+                        <TextBlock Text="LOCALIZATION" Classes="SectionHeader" />
                         <TextBlock Text="Compass-style array map driven by SRP-PHAT source azimuth."
                                    Foreground="{StaticResource TextDimBrush}" TextWrapping="Wrap" Margin="0,0,0,8" />
                         <TextBlock Text="{Binding LocalizationToolRequirementsText}"
@@ -329,9 +325,9 @@
                     </StackPanel>
                 </Border>
 
-                <Border Style="{StaticResource Card}" Margin="5,0">
+                <Border Classes="Card" Margin="5,0">
                     <StackPanel>
-                        <TextBlock Text="CLASSIFICATION" Style="{StaticResource SectionHeader}" />
+                        <TextBlock Text="CLASSIFICATION" Classes="SectionHeader" />
                         <TextBlock Text="YAMNet sound-event classifier on one audio channel."
                                    Foreground="{StaticResource TextDimBrush}" TextWrapping="Wrap" Margin="0,0,0,8" />
                         <TextBlock Text="Needs: device started, yamnet.onnx in Assets/."
@@ -343,9 +339,9 @@
                     </StackPanel>
                 </Border>
 
-                <Border Style="{StaticResource Card}" Margin="5,0,0,0">
+                <Border Classes="Card" Margin="5,0,0,0">
                     <StackPanel>
-                        <TextBlock Text="BEAMFORMER" Style="{StaticResource SectionHeader}" />
+                        <TextBlock Text="BEAMFORMER" Classes="SectionHeader" />
                         <TextBlock Text="Steer a listening beam to a chosen azimuth and monitor the listening state."
                                    Foreground="{StaticResource TextDimBrush}" TextWrapping="Wrap" Margin="0,0,0,8" />
                         <TextBlock Text="{Binding BeamformerToolRequirementsText}"
@@ -356,9 +352,9 @@
                     </StackPanel>
                 </Border>
 
-                <Border Style="{StaticResource Card}" Margin="5,10,5,0">
+                <Border Classes="Card" Margin="5,10,5,0">
                     <StackPanel>
-                        <TextBlock Text="COMBINED LOCALIZATION" Style="{StaticResource SectionHeader}" />
+                        <TextBlock Text="COMBINED LOCALIZATION" Classes="SectionHeader" />
                         <TextBlock Text="Combines two open analysis windows' azimuths into a 2D (x,y) source fix, given the offset between the two arrays."
                                    Foreground="{StaticResource TextDimBrush}" TextWrapping="Wrap" Margin="0,0,0,8" />
                         <TextBlock Text="Needs: two analysis windows open, each started with a live azimuth."

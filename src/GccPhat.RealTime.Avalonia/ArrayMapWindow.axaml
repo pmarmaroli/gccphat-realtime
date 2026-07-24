@@ -1,5 +1,5 @@
-﻿<Window x:Class="GccPhat.RealTime.ArrayMapWindow"
-        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+<Window x:Class="GccPhat.RealTime.ArrayMapWindow"
+        xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="Array map" Height="560" Width="880"
         WindowStartupLocation="CenterOwner"
@@ -30,14 +30,14 @@
                     <TextBlock Text="{Binding LocalizationPairHintText}"
                                Foreground="{StaticResource TextDimBrush}" Margin="0,4,0,0" TextWrapping="Wrap" />
 
-                    <Border Visibility="{Binding LocalizationPairsAutoApplied, Converter={StaticResource BoolToVis}}"
+                    <Border IsVisible="{Binding LocalizationPairsAutoApplied}"
                             Background="{StaticResource FieldBrush}" BorderBrush="{StaticResource AccentBrush}" BorderThickness="1"
                             CornerRadius="6" Padding="10" Margin="0,10,0,0">
                         <TextBlock Text="Default selection: opposite pairs (each mic paired with the one across the array). Change it anytime below."
                                    Foreground="{StaticResource AccentBrush}" FontSize="12" TextWrapping="Wrap" />
                     </Border>
 
-                    <TextBlock Style="{StaticResource SectionHeader}" Text="CHANNEL PAIRS" Margin="0,12,0,8" />
+                    <TextBlock Classes="SectionHeader" Text="CHANNEL PAIRS" Margin="0,12,0,8" />
                     <Grid>
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="*" />
@@ -46,11 +46,11 @@
                         </Grid.ColumnDefinitions>
                         <StackPanel Grid.Column="0" Margin="0,0,6,0">
                             <TextBlock Text="A" Foreground="{StaticResource TextDimBrush}" />
-                            <ComboBox ItemsSource="{Binding AvailableChannels}" SelectedItem="{Binding SelectedChannelA}" />
+                            <ComboBox ItemsSource="{Binding AvailableChannels}" SelectedItem="{Binding SelectedChannelA}" HorizontalAlignment="Stretch" />
                         </StackPanel>
                         <StackPanel Grid.Column="1" Margin="0,0,6,0">
                             <TextBlock Text="B" Foreground="{StaticResource TextDimBrush}" />
-                            <ComboBox ItemsSource="{Binding AvailableChannels}" SelectedItem="{Binding SelectedChannelB}" />
+                            <ComboBox ItemsSource="{Binding AvailableChannels}" SelectedItem="{Binding SelectedChannelB}" HorizontalAlignment="Stretch" />
                         </StackPanel>
                         <Button Grid.Column="2" Content="Add" Width="72" VerticalAlignment="Bottom"
                                 Command="{Binding AddPairCommand}" />
@@ -60,13 +60,13 @@
                     <StackPanel>
                         <Button Content="Opposite pairs" Margin="0,0,0,6"
                                 Command="{Binding AddOppositePairsCommand}"
-                                ToolTip="Toggle: pairs each microphone with the one diametrically opposite it (circular layout, even mic count). Click again to remove them." />
+                                ToolTip.Tip="Toggle: pairs each microphone with the one diametrically opposite it (circular layout, even mic count). Click again to remove them." />
                         <Button Content="Consecutive pairs" Margin="0,0,0,6"
                                 Command="{Binding AddConsecutivePairsCommand}"
-                                ToolTip="Toggle: pairs each microphone with its immediate neighbor around the array. Click again to remove them." />
+                                ToolTip.Tip="Toggle: pairs each microphone with its immediate neighbor around the array. Click again to remove them." />
                         <Button Content="All possible pairs"
                                 Command="{Binding AddAllPairsCommand}"
-                                ToolTip="Toggle: adds every pair among the currently assigned microphones. Click again to remove them." />
+                                ToolTip.Tip="Toggle: adds every pair among the currently assigned microphones. Click again to remove them." />
                     </StackPanel>
 
                     <ListBox ItemsSource="{Binding ActivePairs}" SelectedItem="{Binding SelectedPair}"

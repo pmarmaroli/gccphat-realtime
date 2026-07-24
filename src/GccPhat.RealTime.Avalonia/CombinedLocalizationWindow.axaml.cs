@@ -1,9 +1,10 @@
 using System;
 using System.ComponentModel;
-using System.Windows;
-using System.Windows.Controls;
-using System.Windows.Media;
-using System.Windows.Threading;
+using Avalonia.Controls;
+using Avalonia.Interactivity;
+using Avalonia.Media;
+using Avalonia.Threading;
+using GccPhat.RealTime.Mvvm;
 using GccPhat.RealTime.ViewModels;
 
 namespace GccPhat.RealTime;
@@ -16,20 +17,22 @@ namespace GccPhat.RealTime;
 /// </summary>
 public partial class CombinedLocalizationWindow : Window
 {
-    private readonly CombinedLocalizationViewModel _viewModel = new(new WpfDispatcher());
+    private readonly CombinedLocalizationViewModel _viewModel;
     private bool _redrawPending;
 
-    public CombinedLocalizationWindow()
+    public CombinedLocalizationWindow(IUiDispatcher dispatcher)
     {
         InitializeComponent();
+        _viewModel = new CombinedLocalizationViewModel(dispatcher);
         DataContext = _viewModel;
         _viewModel.PropertyChanged += OnViewModelPropertyChanged;
         Loaded += (_, _) => Redraw();
     }
 
-    private void OnNewAnalysisWindow(object sender, RoutedEventArgs e) => new MainWindow().Show();
+    private void OnNewAnalysisWindow(object? sender, RoutedEventArgs e)
+        => new MainWindow(App.CurrentPlatform, App.CurrentDispatcher, App.CurrentPrompt).Show();
 
-    private void OnCanvasSizeChanged(object sender, SizeChangedEventArgs e) => Redraw();
+    private void OnCanvasSizeChanged(object? sender, SizeChangedEventArgs e) => Redraw();
 
     // Both live sessions push azimuth updates at the analysis tick rate (20 Hz by default each),
     // and every Recompute() touches three properties (SourceXCm/SourceYCm/FixStatusText) — without
@@ -42,28 +45,28 @@ public partial class CombinedLocalizationWindow : Window
             return;
         }
         _redrawPending = true;
-        Dispatcher.BeginInvoke(DispatcherPriority.Render, new Action(() =>
+        Dispatcher.UIThread.Post(() =>
         {
             _redrawPending = false;
             Redraw();
-        }));
+        }, DispatcherPriority.Render);
     }
 
     private void Redraw()
     {
         Canvas c = MapCanvas;
         c.Children.Clear();
-        double w = c.ActualWidth, h = c.ActualHeight;
+        double w = c.Bounds.Width, h = c.Bounds.Height;
         if (w < 20 || h < 20)
         {
             return;
         }
 
-        Brush dim = (Brush)FindResource("TextDimBrush");
-        Brush text = (Brush)FindResource("TextBrush");
-        Brush colorA = (Brush)FindResource("AccentBrush");
-        Brush colorB = (Brush)FindResource("WarnBrush");
-        Brush fixBrush = (Brush)FindResource("GoodBrush");
+        IBrush dim = FindBrush("TextDimBrush");
+        IBrush text = FindBrush("TextBrush");
+        IBrush colorA = FindBrush("AccentBrush");
+        IBrush colorB = FindBrush("WarnBrush");
+        IBrush fixBrush = FindBrush("GoodBrush");
 
         MainViewModel? sessionA = _viewModel.SessionA;
         MainViewModel? sessionB = _viewModel.SessionB;
@@ -136,6 +139,9 @@ public partial class CombinedLocalizationWindow : Window
             ArrayGeometryCanvasDrawing.DrawSourceMarker(c, fixPx.X, fixPx.Y, fixBrush);
         }
     }
+
+    private IBrush FindBrush(string key)
+        => this.TryFindResource(key, out object? value) && value is IBrush brush ? brush : Brushes.White;
 
     protected override void OnClosed(EventArgs e)
     {

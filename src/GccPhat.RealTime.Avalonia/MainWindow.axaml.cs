@@ -1,20 +1,32 @@
 using System;
 using System.Collections.Generic;
-using System.Windows;
+using System.Linq;
+using Avalonia.Controls;
+using Avalonia.Interactivity;
+using Avalonia.Platform.Storage;
+using Avalonia.Threading;
 using GccPhat.RealTime.Analysis;
 using GccPhat.RealTime.Audio;
+using GccPhat.RealTime.Mvvm;
 using GccPhat.RealTime.ViewModels;
-using Microsoft.Win32;
 
 namespace GccPhat.RealTime;
 
-/// <summary>Interaction logic for MainWindow.xaml.</summary>
+/// <summary>Interaction logic for MainWindow.axaml.</summary>
 public partial class MainWindow : Window
 {
-    private readonly MainViewModel _viewModel = new(new WindowsAudioPlatform(), new WpfDispatcher(), new WpfUserPrompt());
+    private readonly MainViewModel _viewModel;
+    private readonly IAudioPlatform _platform;
+    private readonly IUiDispatcher _dispatcher;
+    private readonly IUserPrompt _prompt;
 
-    public MainWindow()
+    public MainWindow(IAudioPlatform platform, IUiDispatcher dispatcher, IUserPrompt prompt)
     {
+        _platform = platform;
+        _dispatcher = dispatcher;
+        _prompt = prompt;
+        _viewModel = new MainViewModel(platform, dispatcher, prompt);
+
         InitializeComponent();
         DataContext = _viewModel;
         _viewModel.Engine.ResultsReady += OnResultsReady;
@@ -24,24 +36,29 @@ public partial class MainWindow : Window
         _viewModel.ReplayFinished += OnReplayFinished;
     }
 
-    private void OnBrowseReplayFile(object sender, RoutedEventArgs e)
+    private async void OnBrowseReplayFile(object? sender, RoutedEventArgs e)
     {
-        var dlg = new OpenFileDialog { Filter = "WAV audio (*.wav)|*.wav", Title = "Select multichannel WAV file" };
-        if (dlg.ShowDialog() == true)
+        IReadOnlyList<IStorageFile> files = await StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
         {
-            _viewModel.LoadReplayFile(dlg.FileName);
+            Title = "Select multichannel WAV file",
+            AllowMultiple = false,
+            FileTypeFilter = new[] { new FilePickerFileType("WAV audio") { Patterns = new[] { "*.wav" } } }
+        });
+        if (files.Count > 0)
+        {
+            _viewModel.LoadReplayFile(files[0].Path.LocalPath);
         }
     }
 
     // Raised on the replay pump thread when a file finishes playing on its own.
     private void OnReplayFinished(object? sender, EventArgs e)
-        => Dispatcher.BeginInvoke(() => _viewModel.StopCommand.Execute(null));
+        => Dispatcher.UIThread.Post(() => _viewModel.StopCommand.Execute(null));
 
     private void OnChannelLevels(double[] levels)
-        => Dispatcher.BeginInvoke(() => _viewModel.UpdateChannelLevels(levels));
+        => Dispatcher.UIThread.Post(() => _viewModel.UpdateChannelLevels(levels));
 
     private void OnAzimuth(GccPhat.Core.SrpEstimate estimate)
-        => Dispatcher.BeginInvoke(() => _viewModel.UpdateAzimuth(estimate));
+        => Dispatcher.UIThread.Post(() => _viewModel.UpdateAzimuth(estimate));
 
     private ArrayMapWindow? _arrayMap;
     private BeamformerWindow? _beamWindow;
@@ -51,11 +68,11 @@ public partial class MainWindow : Window
     // Shared across all open MainWindow instances (not owned by any single analysis session).
     private static CombinedLocalizationWindow? s_combinedWindow;
 
-    private void OnShowCombinedLocalization(object sender, RoutedEventArgs e)
+    private void OnShowCombinedLocalization(object? sender, RoutedEventArgs e)
     {
         if (s_combinedWindow is null)
         {
-            s_combinedWindow = new CombinedLocalizationWindow();
+            s_combinedWindow = new CombinedLocalizationWindow(_dispatcher);
             s_combinedWindow.Closed += (_, _) => s_combinedWindow = null;
             s_combinedWindow.Show();
         }
@@ -67,9 +84,9 @@ public partial class MainWindow : Window
 
     // Opens a second, fully independent analysis chain (own MainViewModel/RealTimeEngine/device
     // selection) in the same process, so a second microphone array can run concurrently.
-    private void OnNewWindow(object sender, RoutedEventArgs e) => new MainWindow().Show();
+    private void OnNewWindow(object? sender, RoutedEventArgs e) => new MainWindow(_platform, _dispatcher, _prompt).Show();
 
-    private void OnShowArrayMap(object sender, RoutedEventArgs e)
+    private void OnShowArrayMap(object? sender, RoutedEventArgs e)
     {
         if (_arrayMap is null)
         {
@@ -83,7 +100,7 @@ public partial class MainWindow : Window
         }
     }
 
-    private void OnShowBeamformer(object sender, RoutedEventArgs e)
+    private void OnShowBeamformer(object? sender, RoutedEventArgs e)
     {
         if (_beamWindow is null)
         {
@@ -97,7 +114,7 @@ public partial class MainWindow : Window
         }
     }
 
-    private void OnShowDelayView(object sender, RoutedEventArgs e)
+    private void OnShowDelayView(object? sender, RoutedEventArgs e)
     {
         if (_delayWindow is null)
         {
@@ -111,7 +128,7 @@ public partial class MainWindow : Window
         }
     }
 
-    private void OnShowClassification(object sender, RoutedEventArgs e)
+    private void OnShowClassification(object? sender, RoutedEventArgs e)
     {
         if (_classificationWindow is null)
         {
@@ -126,14 +143,14 @@ public partial class MainWindow : Window
     }
 
     private void OnClassificationReady(ClassificationResult[] results)
-        => Dispatcher.BeginInvoke(() => _viewModel.UpdateClassification(results));
+        => Dispatcher.UIThread.Post(() => _viewModel.UpdateClassification(results));
 
     private void OnResultsReady(IReadOnlyList<PairResult> results)
     {
-        Dispatcher.BeginInvoke(() => _viewModel.UpdateReadouts(results));
+        Dispatcher.UIThread.Post(() => _viewModel.UpdateReadouts(results));
     }
 
-    protected override void OnClosed(System.EventArgs e)
+    protected override void OnClosed(EventArgs e)
     {
         _viewModel.Engine.ResultsReady -= OnResultsReady;
         _viewModel.Engine.ChannelLevelsReady -= OnChannelLevels;

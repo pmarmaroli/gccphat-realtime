@@ -636,7 +636,7 @@ public sealed class MainViewModel : ObservableObject
             if (SetProperty(ref _selectedDevice, value))
             {
                 UpdateDeviceClaim();
-                RebuildChannelList();
+                RebuildChannelList(SelectedDevice?.ChannelCount ?? 0);
                 OnPropertyChanged(nameof(BeamProcessingText));
                 OnPropertyChanged(nameof(WindowDurationText));
                 OnPropertyChanged(nameof(SessionLabel));
@@ -659,6 +659,7 @@ public sealed class MainViewModel : ObservableObject
                 if (_captureMode == "Live")
                 {
                     MicCountLocked = false;
+                    RebuildChannelList(SelectedDevice?.ChannelCount ?? 0);
                 }
                 OnPropertyChanged(nameof(IsLiveMode));
                 OnPropertyChanged(nameof(IsFileMode));
@@ -723,6 +724,7 @@ public sealed class MainViewModel : ObservableObject
 
             ReplayFilePath = path;
             ReplayChannelsDetectedText = $"Channels detected: {channels}";
+            RebuildChannelList(channels);
             SelectedLayout = "Custom";
             MicCount = channels;
             MicCountLocked = true;
@@ -937,11 +939,10 @@ public sealed class MainViewModel : ObservableObject
         OpenSessionsChanged?.Invoke();
     }
 
-    private void RebuildChannelList()
+    private void RebuildChannelList(int count)
     {
         AvailableChannels.Clear();
         ChannelMeters.Clear();
-        int count = SelectedDevice?.ChannelCount ?? 0;
         for (int c = 0; c < count; c++)
         {
             AvailableChannels.Add(c);

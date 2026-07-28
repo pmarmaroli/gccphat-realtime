@@ -44,6 +44,11 @@ public sealed class MainViewModel : ObservableObject
     private double _yMax = 5;
     private bool _xAutoScale = true;
     private double _xWindowSeconds = 20;
+    private bool _levelYAutoScale = true;
+    private double _levelYMin = -60;
+    private double _levelYMax = 0;
+    private bool _levelXAutoScale = true;
+    private double _levelXWindowSeconds = 20;
     private bool _isRunning;
     private string _statusText = "Select a capture device, then Start. Blow on a mic to identify its channel.";
     private string _detectedChannelText = "Start, then blow on a microphone to identify its channel.";
@@ -825,6 +830,40 @@ public sealed class MainViewModel : ObservableObject
     {
         get => _xWindowSeconds;
         set => SetProperty(ref _xWindowSeconds, value);
+    }
+
+    public bool LevelYAutoScale
+    {
+        get => _levelYAutoScale;
+        set { if (SetProperty(ref _levelYAutoScale, value)) OnPropertyChanged(nameof(CanEditLevelYRange)); }
+    }
+
+    public bool CanEditLevelYRange => !_levelYAutoScale;
+
+    public double LevelYMin
+    {
+        get => _levelYMin;
+        set => SetProperty(ref _levelYMin, value);
+    }
+
+    public double LevelYMax
+    {
+        get => _levelYMax;
+        set => SetProperty(ref _levelYMax, value);
+    }
+
+    public bool LevelXAutoScale
+    {
+        get => _levelXAutoScale;
+        set { if (SetProperty(ref _levelXAutoScale, value)) OnPropertyChanged(nameof(CanEditLevelXRange)); }
+    }
+
+    public bool CanEditLevelXRange => !_levelXAutoScale;
+
+    public double LevelXWindowSeconds
+    {
+        get => _levelXWindowSeconds;
+        set => SetProperty(ref _levelXWindowSeconds, value);
     }
 
     public PairViewModel? SelectedPair

@@ -305,6 +305,17 @@
             <UniformGrid Grid.Row="2" Columns="3" HorizontalAlignment="Stretch" VerticalAlignment="Top">
                 <Border Style="{StaticResource Card}" Margin="0,0,10,0">
                     <StackPanel>
+                        <TextBlock Text="LEVEL VIEW" Style="{StaticResource SectionHeader}" />
+                        <TextBlock Text="Live per-channel signal level (dBFS) in a dedicated window."
+                                   Foreground="{StaticResource TextDimBrush}" TextWrapping="Wrap" Margin="0,0,0,8" />
+                        <TextBlock Text="Needs: capture running."
+                                   Foreground="{StaticResource TextDimBrush}" FontSize="12" Margin="0,0,0,12" TextWrapping="Wrap" />
+                        <Button Content="Open level view &#8599;" Height="42" Click="OnShowLevelView" />
+                    </StackPanel>
+                </Border>
+
+                <Border Style="{StaticResource Card}" Margin="5,0">
+                    <StackPanel>
                         <TextBlock Text="DELAY VIEW" Style="{StaticResource SectionHeader}" />
                         <TextBlock Text="Live delay traces and per-pair readouts in a dedicated window."
                                    Foreground="{StaticResource TextDimBrush}" TextWrapping="Wrap" Margin="0,0,0,8" />

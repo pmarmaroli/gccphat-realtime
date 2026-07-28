@@ -63,6 +63,7 @@ public partial class MainWindow : Window
     private ArrayMapWindow? _arrayMap;
     private BeamformerWindow? _beamWindow;
     private DelayViewWindow? _delayWindow;
+    private LevelViewWindow? _levelWindow;
     private ClassificationWindow? _classificationWindow;
 
     // Shared across all open MainWindow instances (not owned by any single analysis session).
@@ -125,6 +126,20 @@ public partial class MainWindow : Window
         else
         {
             _delayWindow.Activate();
+        }
+    }
+
+    private void OnShowLevelView(object? sender, RoutedEventArgs e)
+    {
+        if (_levelWindow is null)
+        {
+            _levelWindow = new LevelViewWindow(_viewModel);
+            _levelWindow.Closed += (_, _) => _levelWindow = null;
+            _levelWindow.Show();
+        }
+        else
+        {
+            _levelWindow.Activate();
         }
     }
 

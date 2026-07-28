@@ -48,6 +48,9 @@ public sealed class RealTimeEngine : IDisposable
     public event Action<SrpEstimate>? AzimuthReady;
     public event Action<ClassificationResult[]>? ClassificationReady;
 
+    /// <summary>Seconds since the last <see cref="Start"/>, matching the timestamps on <see cref="PairResult"/>.</summary>
+    public double ElapsedSeconds => _clock.Elapsed.TotalSeconds;
+
     // YAMNet classification (runs on its own background thread).
     private YamNetClassifier? _classifier;
     private int _classChannel;

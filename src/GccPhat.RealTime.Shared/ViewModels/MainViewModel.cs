@@ -68,6 +68,7 @@ public sealed class MainViewModel : ObservableObject
     private int _replaySampleRate;
     private WavFileReplayCapture? _activeReplay;
     private bool _replayEndedNaturally;
+    private string _playbackTimeText = string.Empty;
     private string? _selectedPresetName;
     private string _newPresetName = "";
 
@@ -693,6 +694,13 @@ public sealed class MainViewModel : ObservableObject
     }
 
     public string ReplayFileLabel => ReplayFilePath is null ? "No file selected." : Path.GetFileName(ReplayFilePath);
+
+    /// <summary>"0:07 / 1:32" position within the replayed file; empty outside file replay.</summary>
+    public string PlaybackTimeText
+    {
+        get => _playbackTimeText;
+        private set => SetProperty(ref _playbackTimeText, value);
+    }
 
     public string ReplayChannelsDetectedText
     {
@@ -1919,6 +1927,13 @@ public sealed class MainViewModel : ObservableObject
         OnPropertyChanged(nameof(HasVisibleLocalizationAzimuth));
         StatusText = _replayEndedNaturally ? "Replay finished." : "Stopped.";
         _replayEndedNaturally = false;
+        PlaybackTimeText = string.Empty;
+    }
+
+    private static string FormatMinSec(TimeSpan t)
+    {
+        int totalSeconds = (int)t.TotalSeconds;
+        return $"{totalSeconds / 60}:{totalSeconds % 60:D2}";
     }
 
     /// <summary>Called on the UI thread to refresh per-pair readouts from the latest results.</summary>
@@ -1936,6 +1951,11 @@ public sealed class MainViewModel : ObservableObject
     {
         const double ActivationDb = -35.0;
         const double MarginDb = 6.0;
+
+        if (_activeReplay is not null)
+        {
+            PlaybackTimeText = $"Time: {FormatMinSec(_activeReplay.Position)} / {FormatMinSec(_activeReplay.Duration)}";
+        }
 
         int n = Math.Min(levels.Length, ChannelMeters.Count);
         int bestIndex = -1;

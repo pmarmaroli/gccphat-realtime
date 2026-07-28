@@ -46,6 +46,7 @@ public partial class ArrayMapWindow : Window
             case nameof(MainViewModel.HasVisibleLocalizationAzimuth):
             case nameof(MainViewModel.ShowHemisphere):
             case nameof(MainViewModel.HasFrontBackAmbiguity):
+            case nameof(MainViewModel.PlaybackTimeText):
                 Redraw();
                 break;
         }
@@ -63,7 +64,8 @@ public partial class ArrayMapWindow : Window
         string azimuthText = _viewModel.HasVisibleLocalizationAzimuth
             ? $"{_viewModel.AzimuthDeg:F1}\u00b0"
             : "--";
-        AzimuthLabel.Text = $"Azimuth: {azimuthText}   {_viewModel.LevelText}";
+        string timeSuffix = string.IsNullOrEmpty(_viewModel.PlaybackTimeText) ? "" : $"   {_viewModel.PlaybackTimeText}";
+        AzimuthLabel.Text = $"Azimuth: {azimuthText}   {_viewModel.LevelText}{timeSuffix}";
 
         Brush dim = (Brush)FindResource("TextDimBrush");
         Brush text = (Brush)FindResource("TextBrush");

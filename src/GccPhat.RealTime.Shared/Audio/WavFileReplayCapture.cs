@@ -22,6 +22,7 @@ public sealed class WavFileReplayCapture : ICaptureSource
 
     private Thread? _pumpThread;
     private volatile bool _running;
+    private volatile int _currentFrame;
 
     /// <summary>
     /// Raised on the pump thread exactly once when the file is exhausted and pumping stops on its
@@ -68,6 +69,12 @@ public sealed class WavFileReplayCapture : ICaptureSource
     public int ChannelCount { get; }
     public int SampleRate { get; }
 
+    /// <summary>Total length of the loaded file.</summary>
+    public TimeSpan Duration => TimeSpan.FromSeconds(SampleRate == 0 ? 0 : _totalFrames / (double)SampleRate);
+
+    /// <summary>Playback position of the last block written to the ring buffers.</summary>
+    public TimeSpan Position => TimeSpan.FromSeconds(SampleRate == 0 ? 0 : _currentFrame / (double)SampleRate);
+
     public ChannelRingBuffer GetChannel(int index) => _channels[index];
 
     public void Start()
@@ -105,6 +112,7 @@ public sealed class WavFileReplayCapture : ICaptureSource
             }
 
             frame += n;
+            _currentFrame = frame;
             nextDueMs += blockDurationMs * n / BlockFrames;
             double waitMs = nextDueMs - sw.Elapsed.TotalMilliseconds;
             if (waitMs > 0)

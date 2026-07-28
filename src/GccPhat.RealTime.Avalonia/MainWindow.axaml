@@ -48,7 +48,7 @@
                             <TextBlock Text="Delay, localization, beamforming, and classification all pause while the array is quieter than this."
                                        Foreground="{StaticResource TextDimBrush}" Margin="0,0,0,8" TextWrapping="Wrap" />
                             <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                                <Slider Width="220" Minimum="-96" Maximum="0" TickFrequency="8" IsSnapToTickEnabled="False"
+                                <Slider Width="220" Minimum="-120" Maximum="0" TickFrequency="8" IsSnapToTickEnabled="False"
                                         Value="{Binding LevelThresholdDb, Mode=TwoWay}" />
                                 <TextBlock Text="{Binding LevelThresholdDb, StringFormat={}{0:F0} dB}" Margin="12,0,0,0"
                                            VerticalAlignment="Center" FontFamily="Consolas" FontSize="16"

@@ -56,7 +56,7 @@ public sealed class MainViewModel : ObservableObject
     private bool _hasCenterMic = true;
     private bool _hasFrontBackAmbiguity;
     private string _azimuthText = "Azimuth: --";
-    private double _levelThresholdDb = -96;
+    private double _levelThresholdDb = -120;
     private bool _localizationPairsAutoApplied;
     private double _currentLevelDb = double.NegativeInfinity;
     private bool _hasLiveAzimuth;

@@ -1305,10 +1305,35 @@ public sealed class MainViewModel : ObservableObject
         }
         HasFrontBackAmbiguity = MicPositions.Count >= 2 && MicPositions.Max(p => p.Y) - MicPositions.Min(p => p.Y) < 1e-9;
         AttachGeometryPositionHandlers();
+        PruneStaleLocalizationPairs();
         UpdateBeamBand();
         UpdateBeamPattern();
         UpdateDelayAxisRange();
         NotifyToolStateChanged();
+    }
+
+    // Drops pairs referencing a channel no longer assigned to any geometry position - otherwise they
+    // linger as permanently "Ignored" entries after the mic count shrinks (e.g. loading a WAV file
+    // with fewer channels than the previous geometry).
+    private void PruneStaleLocalizationPairs()
+    {
+        var validChannels = MicPositions.Where(p => p.Channel is int).Select(p => p.Channel!.Value).ToHashSet();
+        var stale = ActivePairs.Where(p => !validChannels.Contains(p.Pair.ChannelA) || !validChannels.Contains(p.Pair.ChannelB)).ToList();
+        if (stale.Count == 0)
+        {
+            return;
+        }
+
+        foreach (PairViewModel pair in stale)
+        {
+            if (ReferenceEquals(pair, _selectedPair))
+            {
+                SelectedPair = null;
+            }
+            ActivePairs.Remove(pair);
+        }
+        ReindexActivePairs();
+        SyncEnginePairs();
     }
 
     // Builds per-channel geometry arrays (metres) from the channel→position assignments.

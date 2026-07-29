@@ -9,5 +9,6 @@
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/GccPhat.Core.Tests/GccPhat.Core.Tests.csproj" />
+    <Project Path="tests/GccPhat.RealTime.Shared.Tests/GccPhat.RealTime.Shared.Tests.csproj" />
   </Folder>
 </Solution>

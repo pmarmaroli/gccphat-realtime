@@ -14,7 +14,10 @@ namespace GccPhat.RealTime.Audio;
 /// </summary>
 public sealed class PortAudioCapture : ICaptureSource
 {
-    private const int RingCapacity = 1 << 16; // 65536 samples / channel (~1.3 s at 48 kHz)
+    // 262144 samples / channel: ~5.5 s at 48 kHz, ~2.7 s at 96 kHz, ~1.9 s at 141.12 kHz.
+    // Must comfortably exceed the 1 s window the classifier pulls via CopyLatest (96000 samples
+    // at 96 kHz), plus its filter context - 1 << 16 was too small there and the read wrapped.
+    private const int RingCapacity = 1 << 18;
 
     private readonly ChannelRingBuffer[] _channels;
     private readonly Stream _stream;

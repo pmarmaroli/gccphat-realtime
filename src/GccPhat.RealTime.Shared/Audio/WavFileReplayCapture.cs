@@ -12,7 +12,7 @@ namespace GccPhat.RealTime.Audio;
 /// </summary>
 public sealed class WavFileReplayCapture : ICaptureSource
 {
-    private const int RingCapacity = 1 << 16; // matches MultichannelCapture
+    private const int RingCapacity = 1 << 18; // matches MultichannelCapture / PortAudioCapture
     private const int BlockFrames = 1024;
 
     private readonly ChannelRingBuffer[] _channels;

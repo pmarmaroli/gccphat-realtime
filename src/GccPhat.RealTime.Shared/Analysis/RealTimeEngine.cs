@@ -766,12 +766,19 @@ public sealed class RealTimeEngine : IDisposable
             if (channel >= capture.ChannelCount) continue;
 
             int windowSamples = sampleRate * ClassWindowSeconds;
-            var scratch = new double[windowSamples];
-            if (!capture.GetChannel(channel).CopyLatest(scratch)) continue;
 
             try
             {
-                float[] audio16k = AudioResampler.ResampleTo16kHz(scratch, sampleRate);
+                // Pull the window plus filter context at each end, so the anti-alias filter runs
+                // on real neighbouring audio instead of zero-padding. Costs a few ms of extra
+                // latency (the emitted window ends one context length before "now").
+                int context = AudioResampler.ContextSamplesFor(sampleRate);
+                var scratch = new double[windowSamples + 2 * context];
+                if (!capture.GetChannel(channel).CopyLatest(scratch)) continue;
+
+                float[] audio16k = AudioResampler.ResampleTo16kHz(scratch, sampleRate, context);
+                if (audio16k.Length == 0) continue;
+
                 ClassificationResult[] results = classifier.Classify(audio16k);
                 ClassificationReady?.Invoke(results);
             }

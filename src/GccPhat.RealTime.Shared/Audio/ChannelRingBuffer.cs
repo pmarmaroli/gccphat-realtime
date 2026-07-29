@@ -79,6 +79,13 @@ public sealed class ChannelRingBuffer
                 return false;
             }
             int cap = _buffer.Length;
+            if (n > cap)
+            {
+                // Asking for more than the ring holds would wrap and hand back a temporally
+                // scrambled window (the same slots re-read more than once), not a contiguous
+                // one. Fail rather than return silently corrupt audio.
+                return false;
+            }
             long start = _written - n;
             for (int i = 0; i < n; i++)
             {

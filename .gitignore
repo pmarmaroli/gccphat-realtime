@@ -11,3 +11,7 @@ publish/
 
 ## Logs
 *.log
+
+## Downloaded ML models - fetched on first run by start.sh / start.bat, never committed
+**/Assets/yamnet.onnx
+**/Assets/yamnet_class_map.csv

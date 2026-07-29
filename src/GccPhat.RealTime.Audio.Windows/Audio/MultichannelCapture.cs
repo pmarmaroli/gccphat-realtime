@@ -22,7 +22,9 @@ namespace GccPhat.RealTime.Audio;
 /// </summary>
 public sealed class MultichannelCapture : ICaptureSource
 {
-    private const int RingCapacity = 1 << 16; // 65536 samples / channel (~1.3 s at 48 kHz)
+    // 262144 samples / channel: ~5.5 s at 48 kHz, ~2.7 s at 96 kHz. Must comfortably exceed the
+    // 1 s window the classifier pulls via CopyLatest, plus its filter context.
+    private const int RingCapacity = 1 << 18;
 
     private readonly ChannelRingBuffer[] _channels;
     private readonly Func<byte[], int, double>? _readSample;

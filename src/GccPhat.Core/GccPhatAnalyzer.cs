@@ -288,8 +288,9 @@ public sealed class GccPhatAnalyzer
         return new GccPhatAnalyzer(channel1.Length, fs, fmin, fmax, phat).Process(channel1, channel2);
     }
 
-    // Applies the band mask and PHAT-style colouring (magnitude = |Re(FFT)|, original phase),
-    // writes the coloured spectrum into <paramref name="outSpectrum"/> and returns its RMS.
+    // Applies the band mask (magnitude = |FFT|, original phase), writes the spectrum into
+    // <paramref name="outSpectrum"/> and returns its RMS. The original gccphat CLI used |Re(FFT)|
+    // as magnitude, which weights each bin by its phase; that is wrong without PHAT.
     private double Colore(double[] sigin, Complex[] outSpectrum)
     {
         int n = _nfft;
@@ -300,7 +301,7 @@ public sealed class GccPhatAnalyzer
         double[] abs = _absBuf;
         for (int i = 0; i < n; i++)
         {
-            abs[i] = Math.Abs(_re[i]);
+            abs[i] = Math.Sqrt(_re[i] * _re[i] + _im[i] * _im[i]);
         }
         for (int k = 0; k < _outBandCount; k++)
         {

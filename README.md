@@ -136,9 +136,10 @@ The DSP lives in a reusable, dependency-free library, **`GccPhat.Core`**:
 - `NearFieldTdoa` — near-field point-source TDOA prediction, used by the Combined Localization
   sync cross-check to compare a predicted delay against a measured, clock-corrected one.
 
-`GccPhat.Core` is a faithful, instance-based port of the
-[`gccphat`](https://github.com/pmarmaroli/gccphat) CLI algorithm and reproduces its
-results bit-for-bit (covered by a non-regression test against `stereo_noise.wav`).
+`GccPhat.Core` is an instance-based port of the
+[`gccphat`](https://github.com/pmarmaroli/gccphat) CLI algorithm and reproduces its delay
+results (covered by a non-regression test against `stereo_noise.wav`). One deliberate
+difference: the spectrum magnitude is |FFT|, where the CLI used |Re(FFT)|.
 
 ## Sign convention
 
